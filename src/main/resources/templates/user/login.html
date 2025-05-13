@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>用户登录</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0-rc.1/bin/jsencrypt.min.js"></script>
+    <script src="/js/utils/rsa.js"></script>
+    <script src="/js/api/user.js"></script>
+</head>
+<body>
+    <div>
+        <h2>用户登录</h2>
+        <form id="loginForm">
+            <div>
+                <label>用户名：</label>
+                <input type="text" id="userName" required>
+            </div>
+            <div>
+                <label>密码：</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit">登录</button>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const userName = document.getElementById('userName').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const result = await window.userApi.login(userName, password);
+                if (result.code === 0) {
+                    // 登录成功，保存token
+                    localStorage.setItem('token', result.data.token);
+                    // 跳转到首页
+                    window.location.href = '/';
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                alert('登录失败：' + error.message);
+            }
+        });
+    </script>
+</body>
+</html> 
