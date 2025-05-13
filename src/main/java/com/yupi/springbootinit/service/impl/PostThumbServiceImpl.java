@@ -3,6 +3,7 @@ package com.yupi.springbootinit.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.yupi.springbootinit.common.ErrorCode;
+import com.yupi.springbootinit.common.UserHolder;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.PostThumbMapper;
 import com.yupi.springbootinit.model.entity.Post;
@@ -32,18 +33,21 @@ public class PostThumbServiceImpl extends ServiceImpl<PostThumbMapper, PostThumb
      * 点赞
      *
      * @param postId
-     * @param loginUser
      * @return
      */
     @Override
-    public int doPostThumb(long postId, User loginUser) {
+    public int doPostThumb(long postId) {
         // 判断实体是否存在，根据类别获取实体
         Post post = postService.getById(postId);
         if (post == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
         // 是否已点赞
-        long userId = loginUser.getId();
+        String userIdStr = UserHolder.getUser();
+        if (userIdStr == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        long userId = Long.parseLong(userIdStr);
         // 每个用户串行点赞
         // 锁必须要包裹住事务方法
         PostThumbService postThumbService = (PostThumbService) AopContext.currentProxy();

@@ -14,6 +14,7 @@ import com.yupi.springbootinit.model.enums.FileUploadBizEnum;
 import com.yupi.springbootinit.service.UserService;
 import java.io.File;
 import java.util.Arrays;
+import java.util.Scanner;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -112,4 +113,70 @@ public class FileController {
             }
         }
     }
+
+    static int[][][] dp;
+    static char[] numChars;
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        int T = scanner.nextInt();
+        for (int i = 0; i < T; i++) {
+            long L = scanner.nextLong();
+            long R = scanner.nextLong();
+            long count = countLucky(R)-countLucky(L-1);
+            System.out.println(count);
+        }
+        scanner.close();
+    }
+    public static long countLucky(long n) {
+        if(n<1){
+            return 0;
+
+        }
+        numChars = String.valueOf(n).toCharArray();
+        int len = numChars.length;
+        dp = new int[len][2][2];
+        for (int i = 0; i < len; i++) {
+            for (int j = 0; j < 2; j++) {
+                Arrays.fill(dp[i][j],-1);
+            }
+        }
+        return dfs(0,true,false);
+
+    }
+    public static long dfs(int pos,boolean isLimit,boolean hasLuck) {
+        if(pos == numChars.length){
+            return hasLuck?1:0;
+        }
+        if(!isLimit && dp[pos][hasLuck?1:0][0] == -1){
+            return dp[pos][hasLuck?1:0][0];
+        }
+
+        int upBound = isLimit?numChars[pos]-'0' :9;
+        int count=0;
+        for (int i = 0; i < upBound; i++) {
+            boolean newIsLimit = isLimit && i ==upBound;
+            boolean newHasLucky = hasLuck;
+            if(!hasLuck){
+                String sub = ""+(i==0 && pos==0?"":i);
+
+
+                    if(!sub.isEmpty()&&Long.parseLong(sub)%3==0){
+                        newHasLucky=true;
+                    }
+
+                }
+
+
+            count+=dfs(pos+1,newIsLimit,newHasLucky);
+        }
+        if (!isLimit){
+            dp[pos][hasLuck?1:0][1] = count;
+        }
+        return count;
+
+
+
+    }
+
 }
+

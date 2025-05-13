@@ -1,5 +1,8 @@
 package com.yupi.springbootinit.aop;
 
+import com.yupi.springbootinit.common.ErrorCode;
+import com.yupi.springbootinit.exception.BusinessException;
+import com.yupi.springbootinit.utils.JwtUtils;
 import java.util.UUID;
 import javax.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +16,8 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import javax.annotation.Resource;
+
 /**
  * 请求响应日志 AOP
  *
@@ -23,6 +28,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @Component
 @Slf4j
 public class LogInterceptor {
+
+    @Resource
+    private JwtUtils jwtUtils;
 
     /**
      * 执行拦截
@@ -41,9 +49,25 @@ public class LogInterceptor {
         // 获取请求参数
         Object[] args = point.getArgs();
         String reqParam = "[" + StringUtils.join(args, ", ") + "]";
+        // 获取token
+        String token = httpServletRequest.getHeader("Authorization");
         // 输出请求日志
         log.info("request start，id: {}, path: {}, ip: {}, params: {}", requestId, url,
                 httpServletRequest.getRemoteHost(), reqParam);
+        // 验证token
+        if (StringUtils.isNotBlank(token)) {
+            // 验证token是否有效
+            if (!jwtUtils.validateToken(token)) {
+                throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR, "token已过期或无效");
+            }
+            // 从token中获取用户ID
+            Long userId = jwtUtils.getUserIdFromToken(token);
+            if (userId == null) {
+                throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR, "token无效");
+            }
+            // 将用户信息存入请求上下文
+            httpServletRequest.setAttribute("userId", userId);
+        }
         // 执行原方法
         Object result = point.proceed();
         // 输出响应日志

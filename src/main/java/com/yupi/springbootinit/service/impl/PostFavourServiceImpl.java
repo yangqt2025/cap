@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.yupi.springbootinit.common.ErrorCode;
+import com.yupi.springbootinit.common.UserHolder;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.PostFavourMapper;
 import com.yupi.springbootinit.model.entity.Post;
@@ -35,19 +36,22 @@ public class PostFavourServiceImpl extends ServiceImpl<PostFavourMapper, PostFav
      * 帖子收藏
      *
      * @param postId
-     * @param loginUser
      * @return
      */
     @Override
-    public int doPostFavour(long postId, User loginUser) {
-        // 判断是否存在
+    public int doPostFavour(long postId) {
+        // 判断实体是否存在，根据类别获取实体
         Post post = postService.getById(postId);
         if (post == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
-        // 是否已帖子收藏
-        long userId = loginUser.getId();
-        // 每个用户串行帖子收藏
+        // 是否已收藏
+        String userIdStr = UserHolder.getUser();
+        if (userIdStr == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        long userId = Long.parseLong(userIdStr);
+        // 每个用户串行收藏
         // 锁必须要包裹住事务方法
         PostFavourService postFavourService = (PostFavourService) AopContext.currentProxy();
         synchronized (String.valueOf(userId).intern()) {
@@ -76,14 +80,14 @@ public class PostFavourServiceImpl extends ServiceImpl<PostFavourMapper, PostFav
         PostFavour postFavour = new PostFavour();
         postFavour.setUserId(userId);
         postFavour.setPostId(postId);
-        QueryWrapper<PostFavour> postFavourQueryWrapper = new QueryWrapper<>(postFavour);
-        PostFavour oldPostFavour = this.getOne(postFavourQueryWrapper);
+        QueryWrapper<PostFavour> favourQueryWrapper = new QueryWrapper<>(postFavour);
+        PostFavour oldPostFavour = this.getOne(favourQueryWrapper);
         boolean result;
         // 已收藏
         if (oldPostFavour != null) {
-            result = this.remove(postFavourQueryWrapper);
+            result = this.remove(favourQueryWrapper);
             if (result) {
-                // 帖子收藏数 - 1
+                // 收藏数 - 1
                 result = postService.update()
                         .eq("id", postId)
                         .gt("favourNum", 0)
@@ -94,10 +98,10 @@ public class PostFavourServiceImpl extends ServiceImpl<PostFavourMapper, PostFav
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR);
             }
         } else {
-            // 未帖子收藏
+            // 未收藏
             result = this.save(postFavour);
             if (result) {
-                // 帖子收藏数 + 1
+                // 收藏数 + 1
                 result = postService.update()
                         .eq("id", postId)
                         .setSql("favourNum = favourNum + 1")

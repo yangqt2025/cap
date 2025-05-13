@@ -6,8 +6,9 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
-import java.util.Date;
 import lombok.Data;
+
+import java.util.Date;
 
 /**
  * 用户
@@ -22,7 +23,7 @@ public class User implements Serializable {
     /**
      * id
      */
-    @TableId(type = IdType.ASSIGN_ID)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     /**
@@ -36,16 +37,6 @@ public class User implements Serializable {
     private String userPassword;
 
     /**
-     * 开放平台id
-     */
-    private String unionId;
-
-    /**
-     * 公众号openId
-     */
-    private String mpOpenId;
-
-    /**
      * 用户昵称
      */
     private String userName;
@@ -56,14 +47,24 @@ public class User implements Serializable {
     private String userAvatar;
 
     /**
-     * 用户简介
-     */
-    private String userProfile;
-
-    /**
      * 用户角色：user/admin/ban
      */
     private String userRole;
+
+    /**
+     * 手机号
+     */
+    private String phoneNumber;
+
+    /**
+     * 微信开放平台id
+     */
+    private String unionId;
+
+    /**
+     * 公众号openId
+     */
+    private String mpOpenId;
 
     /**
      * 创建时间
@@ -83,4 +84,11 @@ public class User implements Serializable {
 
     @TableField(exist = false)
     private static final long serialVersionUID = 1L;
+
+    /**
+     * 设置用户ID
+     */
+    public void setUserId(Long userId) {
+        this.id = userId;
+    }
 }

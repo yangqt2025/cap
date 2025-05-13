@@ -1,11 +1,13 @@
 package com.yupi.springbootinit.service.impl;
 
 import static com.yupi.springbootinit.constant.UserConstant.USER_LOGIN_STATE;
+import static com.yupi.springbootinit.constant.UserConstant.DEFAULT_ROLE;
 
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.yupi.springbootinit.common.ErrorCode;
+import com.yupi.springbootinit.common.UserHolder;
 import com.yupi.springbootinit.constant.CommonConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.UserMapper;
@@ -19,12 +21,7 @@ import com.yupi.springbootinit.model.vo.UserVO;
 import com.yupi.springbootinit.repository.FileRepository;
 import com.yupi.springbootinit.service.UserService;
 import com.yupi.springbootinit.utils.SqlUtils;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
-import javax.servlet.http.HttpServletRequest;
+import com.yupi.springbootinit.utils.JwtUtils;
 import lombok.extern.slf4j.Slf4j;
 import me.chanjar.weixin.common.bean.WxOAuth2UserInfo;
 import org.apache.commons.lang3.StringUtils;
@@ -35,6 +32,12 @@ import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.DigestUtils;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 用户服务实现
@@ -49,28 +52,71 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     /**
      * 盐值，混淆密码
      */
-    public static final String SALT = "yupi";
+    private static final String SALT = "yupi";
     @Autowired
     private FileRepository fileRepository;
+    @Autowired
+    private JwtUtils jwtUtils;
 
     private static final Logger logger = LoggerFactory.getLogger(UserServiceImpl.class);
 
-
     @Override
-    public long userRegister(String userAccount, String userPassword, String checkPassword) {
+    public void validUser(User user, boolean add) {
+        if (user == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        String userAccount = user.getUserAccount();
+        String userPassword = user.getUserPassword();
+        String phoneNumber = user.getPhoneNumber();
+        String userRole = user.getUserRole();
+
+        // 创建时，所有参数必须非空
+        if (add) {
+            if (StringUtils.isBlank(userAccount)) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户账号不能为空");
+            }
+            if (StringUtils.isBlank(userPassword)) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户密码不能为空");
+            }
+            if (StringUtils.isBlank(phoneNumber)) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "手机号不能为空");
+            }
+            if (userPassword.length() < 8) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户密码长度不能小于8位");
+            }
+            if (!phoneNumber.matches("^1[3-9]\\d{9}$")) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "手机号格式不正确");
+            }
+        }
+        if (StringUtils.isNotBlank(userAccount) && userAccount.length() < 4) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户账号过短");
+        }
+        if (StringUtils.isNotBlank(userRole)) {
+            if (!UserRoleEnum.ADMIN.getValue().equals(userRole) && !UserRoleEnum.USER.getValue().equals(userRole)) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户角色不正确");
+            }
+        }
+    }
+
+    /**
+     * 用户注册
+     *
+     * @param userAccount 用户账号
+     * @param userPassword 用户密码
+     * @param phoneNumber 手机号
+     * @return 新用户 id
+     */
+    @Override
+    public long userRegister(String userAccount, String userPassword, String phoneNumber) {
         // 1. 校验
-        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword)) {
+        if (StringUtils.isBlank(userAccount) || StringUtils.isBlank(userPassword) || StringUtils.isBlank(phoneNumber)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
         }
         if (userAccount.length() < 4) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户账号过短");
         }
-        if (userPassword.length() < 8 || checkPassword.length() < 8) {
+        if (userPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户密码过短");
-        }
-        // 密码和校验密码相同
-        if (!userPassword.equals(checkPassword)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "两次输入的密码不一致");
         }
         synchronized (userAccount.intern()) {
             // 账户不能重复
@@ -80,12 +126,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             if (count > 0) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "账号重复");
             }
-            // 2. 加密
-            String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
             // 3. 插入数据
             User user = new User();
             user.setUserAccount(userAccount);
-            user.setUserPassword(encryptPassword);
+            user.setUserPassword(userPassword);
+            user.setPhoneNumber(phoneNumber);
             boolean saveResult = this.save(user);
             if (!saveResult) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "注册失败，数据库错误");
@@ -94,10 +139,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
     }
 
+    /**
+     * 用户登录
+     *
+     * @param userAccount 用户账号
+     * @param userPassword 用户密码
+     * @param request
+     * @return 脱敏后的用户信息
+     */
     @Override
-    public LoginUserVO userLogin(String userAccount, String userPassword, HttpServletRequest request) {
+    public LoginUserVO userLogin(String userAccount, String userPassword, HttpServletRequest request, HttpServletResponse response) {
         // 1. 校验
-        if (StringUtils.isAnyBlank(userAccount, userPassword)) {
+        if (StringUtils.isBlank(userAccount) || StringUtils.isBlank(userPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
         }
         if (userAccount.length() < 4) {
@@ -106,12 +159,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (userPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码错误");
         }
-        // 2. 加密
-        String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
         // 查询用户是否存在
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userAccount", userAccount);
-        queryWrapper.eq("userPassword", encryptPassword);
+        queryWrapper.eq("userPassword", userPassword);
         User user = this.baseMapper.selectOne(queryWrapper);
         // 用户不存在
         if (user == null) {
@@ -120,7 +171,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         // 3. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, user);
-        return this.getLoginUserVO(user);
+        LoginUserVO loginUserVO = this.getLoginUserVO(user);
+        // 保存userId到ThreadLocal
+        UserHolder.saveUser(String.valueOf(user.getId()));
+        return loginUserVO;
     }
 
     @Override
@@ -134,7 +188,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             queryWrapper.eq("unionId", unionId);
             User user = this.getOne(queryWrapper);
             // 被封号，禁止登录
-            if (user != null && UserRoleEnum.BAN.getValue().equals(user.getUserRole())) {
+            if (user != null && DEFAULT_ROLE.equals(user.getUserRole())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN_ERROR, "该用户已被封，禁止登录");
             }
             // 用户不存在则创建
@@ -146,11 +200,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 user.setUserName(wxOAuth2UserInfo.getNickname());
                 boolean result = this.save(user);
                 if (!result) {
-                    throw new BusinessException(ErrorCode.SYSTEM_ERROR, "登录失败");
+                    throw new BusinessException(ErrorCode.SYSTEM_ERROR);
                 }
             }
             // 记录用户的登录态
             request.getSession().setAttribute(USER_LOGIN_STATE, user);
+            // 保存userId到ThreadLocal
+            UserHolder.saveUser(String.valueOf(user.getId()));
             return getLoginUserVO(user);
         }
     }
@@ -163,19 +219,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     @Override
     public User getLoginUser(HttpServletRequest request) {
-        // 先判断是否已登录
-        Object userObj = request.getSession().getAttribute(USER_LOGIN_STATE);
-        User currentUser = (User) userObj;
-        if (currentUser == null || currentUser.getId() == null) {
-            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        // 从ThreadLocal中获取userId
+        String userIdStr = UserHolder.getUser();
+        if (userIdStr == null) {
+            return null;
         }
-        // 从数据库查询（追求性能的话可以注释，直接走缓存）
-        long userId = currentUser.getId();
-        currentUser = this.getById(userId);
-        if (currentUser == null) {
-            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+
+        try {
+            Long userId = Long.parseLong(userIdStr);
+            return this.getById(userId);
+        } catch (NumberFormatException e) {
+            return null;
         }
-        return currentUser;
     }
 
     /**
@@ -194,7 +249,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         // 从数据库查询（追求性能的话可以注释，直接走缓存）
         long userId = currentUser.getId();
-        return this.getById(userId);
+        currentUser = this.getById(userId);
+        if (currentUser == null) {
+            return null;
+        }
+        return currentUser;
     }
 
     /**
@@ -213,21 +272,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public boolean isAdmin(User user) {
-        return user != null && UserRoleEnum.ADMIN.getValue().equals(user.getUserRole());
+        return user != null && DEFAULT_ROLE.equals(user.getUserRole());
     }
 
     /**
      * 用户注销
      *
      * @param request
+     * @return
      */
     @Override
     public boolean userLogout(HttpServletRequest request) {
         if (request.getSession().getAttribute(USER_LOGIN_STATE) == null) {
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, "未登录");
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
         }
         // 移除登录态
         request.getSession().removeAttribute(USER_LOGIN_STATE);
+        // 移除ThreadLocal中的userId
+        UserHolder.removeUser();
         return true;
     }
 
@@ -253,64 +315,106 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public List<UserVO> getUserVO(List<User> userList) {
-        if (CollUtil.isEmpty(userList)) {
-            return new ArrayList<>();
+        if (userList == null) {
+            return null;
         }
-        return userList.stream().map(this::getUserVO).collect(Collectors.toList());
+        List<UserVO> userVOList = new ArrayList<>();
+        for (User user : userList) {
+            UserVO userVO = new UserVO();
+            BeanUtils.copyProperties(user, userVO);
+            userVOList.add(userVO);
+        }
+        return userVOList;
     }
 
     @Override
     public QueryWrapper<User> getQueryWrapper(UserQueryRequest userQueryRequest) {
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         if (userQueryRequest == null) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "请求参数为空");
+            return queryWrapper;
         }
-        Long id = userQueryRequest.getId();
-        String unionId = userQueryRequest.getUnionId();
-        String mpOpenId = userQueryRequest.getMpOpenId();
-        String userName = userQueryRequest.getUserName();
-        String userProfile = userQueryRequest.getUserProfile();
-        String userRole = userQueryRequest.getUserRole();
+        // 添加过滤条件
+        String searchText = userQueryRequest.getSearchText();
         String sortField = userQueryRequest.getSortField();
         String sortOrder = userQueryRequest.getSortOrder();
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        Long id = userQueryRequest.getId();
+        String userAccount = userQueryRequest.getUserAccount();
+        String phoneNumber = userQueryRequest.getPhoneNumber();
+        String userRole = userQueryRequest.getUserRole();
+        // 拼接查询条件
+        if (StringUtils.isNotBlank(searchText)) {
+            queryWrapper.like("userName", searchText).or().like("userAccount", searchText);
+        }
         queryWrapper.eq(id != null, "id", id);
-        queryWrapper.eq(StringUtils.isNotBlank(unionId), "unionId", unionId);
-        queryWrapper.eq(StringUtils.isNotBlank(mpOpenId), "mpOpenId", mpOpenId);
+        queryWrapper.eq(StringUtils.isNotBlank(userAccount), "userAccount", userAccount);
+        queryWrapper.eq(StringUtils.isNotBlank(phoneNumber), "phoneNumber", phoneNumber);
         queryWrapper.eq(StringUtils.isNotBlank(userRole), "userRole", userRole);
-        queryWrapper.like(StringUtils.isNotBlank(userProfile), "userProfile", userProfile);
-        queryWrapper.like(StringUtils.isNotBlank(userName), "userName", userName);
-        queryWrapper.orderBy(SqlUtils.validSortField(sortField), sortOrder.equals(CommonConstant.SORT_ORDER_ASC),
-                sortField);
+        queryWrapper.orderBy(StringUtils.isNotBlank(sortField), sortOrder.equals("ascend"), sortField);
         return queryWrapper;
     }
 
-
     @Override
-    public boolean saveEssaySubmission(UserEssaySubmission essaySubmission,String correctionResult) {
+    public boolean saveEssaySubmission(UserEssaySubmission essaySubmission, String correctionResult) {
+        // 获取当前用户ID
+        String userIdStr = UserHolder.getUser();
+        if (userIdStr == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        Long userId = Long.parseLong(userIdStr);
+
         FileEntity fileEntity = new FileEntity();
-        fileEntity.setUserId(essaySubmission.getUserId());
+        fileEntity.setUserId(userId);
         fileEntity.setDistrict(essaySubmission.getDistrict());
         fileEntity.setType(essaySubmission.getType());
         fileEntity.setTopic(essaySubmission.getTopic());
         fileEntity.setContent(essaySubmission.getAnswer());
         fileEntity.setQuestionID(essaySubmission.getQuestionID());
-        fileEntity.setCorrectionResult(correctionResult); // 设置批改结果
+        fileEntity.setCorrectionResult(correctionResult);
         fileEntity.setTimestamp(LocalDateTime.now());
         try {
             // 保存到数据库
             fileRepository.save(fileEntity);
-            logger.info("Successfully saved essay submission for userId: {}", essaySubmission.getUserId());
+            logger.info("Successfully saved essay submission for userId: {}", userId);
             return true;
         } catch (Exception e) {
-            logger.error("Failed to save essay submission for userId: {}", essaySubmission.getUserId(), e);
+            logger.error("Failed to save essay submission for userId: {}", userId, e);
             return false;
         }
     }
 
-
-
     @Override
     public List<FileEntity> getUserSubmissions(Long userId) {
         return fileRepository.findByUserIdOrderByTimestampDesc(userId);
+    }
+
+    @Override
+    public boolean isUserExist(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("id", userId);
+        return this.count(queryWrapper) > 0;
+    }
+
+    @Override
+    public List<FileEntity> getUserFiles() {
+        // 获取当前用户ID
+        String userIdStr = UserHolder.getUser();
+        if (userIdStr == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        Long userId = Long.parseLong(userIdStr);
+        return getUserSubmissions(userId);
+    }
+
+    @Override
+    public boolean physicalDeleteUser(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        // 使用原生SQL执行物理删除
+        return this.baseMapper.delete(new QueryWrapper<User>()
+                .eq("id", userId)) > 0;
     }
 }

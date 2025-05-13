@@ -49,7 +49,7 @@ public class PostThumbController {
         // 登录才能点赞
         final User loginUser = userService.getLoginUser(request);
         long postId = postThumbAddRequest.getPostId();
-        int result = postThumbService.doPostThumb(postId, loginUser);
+        int result = postThumbService.doPostThumb(postId);
         return ResultUtils.success(result);
     }
 

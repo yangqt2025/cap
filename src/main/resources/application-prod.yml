@@ -5,12 +5,21 @@ server:
   port: 8101
 spring:
   # 数据库配置
-  # todo 需替换配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/my_db
+    url: jdbc:mysql://139.159.163.234:3306/aiagent?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf-8&connectTimeout=60000&socketTimeout=120000&autoReconnect=true&maxReconnects=10&rewriteBatchedStatements=true&logger=Slf4JLogger&profileSQL=true
     username: root
-    password: 123456
+    password: Mian2002@lmn
+    hikari:
+      connection-timeout: 60000
+      maximum-pool-size: 20
+      minimum-idle: 10
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      validation-timeout: 5000
+      connection-test-query: SELECT 1
+      initialization-fail-timeout: 0
+      register-mbeans: true
   # Redis 配置
   # todo 需替换配置
   redis:
@@ -29,6 +38,18 @@ mybatis-plus:
   configuration:
     # 生产环境关闭日志
     log-impl: ''
+    map-underscore-to-camel-case: false
+    # 配置类型处理器
+    type-handlers-package: com.yupi.springbootinit.config
+    # 配置默认枚举类型处理器
+    default-enum-type-handler: com.yupi.springbootinit.config.EducationEnumTypeHandler
+  global-config:
+    db-config:
+      logic-delete-field: isDelete # 全局逻辑删除的实体字段名
+      logic-delete-value: 1 # 逻辑已删除值（默认为 1）
+      logic-not-delete-value: 0 # 逻辑未删除值（默认为 0）
+      # 主键类型
+      id-type: auto
 # 接口文档配置
 knife4j:
   basic:

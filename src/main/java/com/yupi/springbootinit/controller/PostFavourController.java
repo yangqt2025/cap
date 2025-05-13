@@ -59,7 +59,7 @@ public class PostFavourController {
         // 登录才能操作
         final User loginUser = userService.getLoginUser(request);
         long postId = postFavourAddRequest.getPostId();
-        int result = postFavourService.doPostFavour(postId, loginUser);
+        int result = postFavourService.doPostFavour(postId);
         return ResultUtils.success(result);
     }
 

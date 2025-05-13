@@ -19,7 +19,10 @@ import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.vo.PostVO;
 import com.yupi.springbootinit.service.PostService;
 import com.yupi.springbootinit.service.UserService;
+
+import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -260,4 +263,122 @@ public class PostController {
         return ResultUtils.success(result);
     }
 
-}
+    public static void main(String[] args) {
+        Scanner scanner =new Scanner(System.in);
+        int count =0;
+        int T = scanner.nextInt();
+        for (int i = 0; i < T; i++) {
+            int n = scanner.nextInt();
+            int[] p =new int[n];
+            for (int j = 0; j < n; j++) {
+
+                p[j] =  scanner.nextInt();
+            }
+
+            for (int l = 0; l < n; l++) {
+                for (int r = l; r < n; r++) {
+                    if((r-l+1)%2==1 && isGood(p,l,r)){
+                        count++;
+                    }
+                }
+            }
+
+
+        }
+        System.out.println(count);
+
+
+    }
+
+
+
+
+
+    public static boolean isGood(int[] p, int l, int r) {
+        int mid = (l+r)/2;
+        int midVal = p[mid];
+        int count = 0;
+        int equalcount =0;
+        for (int i = l; i <= r; i++) {
+            if (p[i]<midVal){
+                count++;
+            } else if (p[i]==midVal) {
+                equalcount++;
+
+            }
+
+
+
+        }
+        int expect = (r-l)/2;
+        if (count == expect){
+            return true;
+        } else if (count+equalcount>expect) {
+            return true;
+
+        }
+        return false;
+    }
+
+
+    public static boolean isMirror(String str){
+        if(str.length()<2){
+            return false;
+        }
+        if(!isPa(str)){
+            return false;
+        }
+        for (int i = 0; i < str.length(); i++) {
+            if(!hasVer(str.charAt(i))){
+                return false;
+            }
+
+        }
+        return true;
+
+    }
+    public static boolean isPa(String str){
+        int left =0;
+        int right =str.length()-1;
+        while(left<right){
+            if(str.charAt(left)!=str.charAt(right)){
+                return false;
+            }
+            left++;
+            right--;
+        }
+        return true;
+    }
+    public static boolean hasVer(char c){
+        char[] axis = {'A','H','I','M','O','T','U','V','W','X','Y'};
+        for(char cc:axis){
+            if(c==cc){
+                return true;
+            }
+        }
+        return false;
+
+    }
+
+
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

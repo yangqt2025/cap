@@ -1,5 +1,6 @@
 package com.yupi.springbootinit.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.annotation.AuthCheck;
 import com.yupi.springbootinit.common.BaseResponse;
@@ -11,11 +12,17 @@ import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.exception.ThrowUtils;
 import com.yupi.springbootinit.model.dto.user.*;
+import com.yupi.springbootinit.model.dto.userquestionrecord.UserQuestionRecordQueryRequest;
 import com.yupi.springbootinit.model.entity.FileEntity;
 import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.vo.LoginUserVO;
 import com.yupi.springbootinit.model.vo.UserVO;
+import com.yupi.springbootinit.model.vo.UserQuestionRecordVO;
 import com.yupi.springbootinit.service.UserService;
+import com.yupi.springbootinit.service.UserQuestionRecordService;
+import com.yupi.springbootinit.service.UserTokenService;
+import com.yupi.springbootinit.utils.JwtUtils;
+import com.yupi.springbootinit.utils.RSAUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -38,7 +45,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import static com.yupi.springbootinit.service.impl.UserServiceImpl.SALT;
+//import static com.yupi.springbootinit.service.impl.UserServiceImpl.SALT;
 
 /**
  * 用户接口
@@ -47,7 +54,7 @@ import static com.yupi.springbootinit.service.impl.UserServiceImpl.SALT;
  * @from <a href="https://yupi.icu">编程导航知识星球</a>
  */
 @RestController
-@RequestMapping("/user")
+@RequestMapping("/api/user")
 @Slf4j
 public class UserController {
 
@@ -57,7 +64,27 @@ public class UserController {
     @Resource
     private WxOpenConfig wxOpenConfig;
 
+    @Resource
+    private UserQuestionRecordService userQuestionRecordService;
+
+    @Resource
+    private UserTokenService userTokenService;
+
+    @Resource
+    private JwtUtils jwtUtils;
+
+    @Resource
+    private RSAUtils rsaUtils;
+
     // region 登录相关
+
+    /**
+     * 获取RSA公钥
+     */
+    @GetMapping("/public-key")
+    public BaseResponse<String> getPublicKey() {
+        return ResultUtils.success(rsaUtils.getPublicKey());
+    }
 
     /**
      * 用户注册
@@ -72,11 +99,11 @@ public class UserController {
         }
         String userAccount = userRegisterRequest.getUserAccount();
         String userPassword = userRegisterRequest.getUserPassword();
-        String checkPassword = userRegisterRequest.getCheckPassword();
-        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword)) {
-            return null;
+        String phoneNumber = userRegisterRequest.getPhoneNumber();
+        if (StringUtils.isAnyBlank(userAccount, userPassword, phoneNumber)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数不能为空");
         }
-        long result = userService.userRegister(userAccount, userPassword, checkPassword);
+        long result = userService.userRegister(userAccount, userPassword, phoneNumber);
         return ResultUtils.success(result);
     }
 
@@ -85,10 +112,11 @@ public class UserController {
      *
      * @param userLoginRequest
      * @param request
+     * @param response
      * @return
      */
     @PostMapping("/login")
-    public BaseResponse<LoginUserVO> userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request) {
+    public BaseResponse<LoginUserVO> userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request, HttpServletResponse response) {
         if (userLoginRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -97,7 +125,7 @@ public class UserController {
         if (StringUtils.isAnyBlank(userAccount, userPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        LoginUserVO loginUserVO = userService.userLogin(userAccount, userPassword, request);
+        LoginUserVO loginUserVO = userService.userLogin(userAccount, userPassword, request, response);
         return ResultUtils.success(loginUserVO);
     }
 
@@ -170,12 +198,15 @@ public class UserController {
         }
         User user = new User();
         BeanUtils.copyProperties(userAddRequest, user);
-        // 默认密码 12345678
-        String defaultPassword = "12345678";
-        String encryptPassword = DigestUtils.md5DigestAsHex((SALT + defaultPassword).getBytes());
-        user.setUserPassword(encryptPassword);
+        // 校验
+        userService.validUser(user, true);
+        User loginUser = userService.getLoginUser(request);
+        user.setUserId(loginUser.getId());
+        user.setUserPassword(encryptPassword(userAddRequest.getUserPassword()));
         boolean result = userService.save(user);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        if (!result) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR);
+        }
         return ResultUtils.success(user.getId());
     }
 
@@ -206,15 +237,18 @@ public class UserController {
     @PostMapping("/update")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<Boolean> updateUser(@RequestBody UserUpdateRequest userUpdateRequest,
-                                            HttpServletRequest request) {
+            HttpServletRequest request) {
         if (userUpdateRequest == null || userUpdateRequest.getId() == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         User user = new User();
         BeanUtils.copyProperties(userUpdateRequest, user);
+        // 参数校验
+        userService.validUser(user, false);
+        User loginUser = userService.getLoginUser(request);
+        user.setUserId(loginUser.getId());
         boolean result = userService.updateById(user);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        return ResultUtils.success(true);
+        return ResultUtils.success(result);
     }
 
     /**
@@ -231,7 +265,6 @@ public class UserController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         User user = userService.getById(id);
-        ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR);
         return ResultUtils.success(user);
     }
 
@@ -259,7 +292,7 @@ public class UserController {
     @PostMapping("/list/page")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<Page<User>> listUserByPage(@RequestBody UserQueryRequest userQueryRequest,
-                                                   HttpServletRequest request) {
+            HttpServletRequest request) {
         long current = userQueryRequest.getCurrent();
         long size = userQueryRequest.getPageSize();
         Page<User> userPage = userService.page(new Page<>(current, size),
@@ -276,17 +309,19 @@ public class UserController {
      */
     @PostMapping("/list/page/vo")
     public BaseResponse<Page<UserVO>> listUserVOByPage(@RequestBody UserQueryRequest userQueryRequest,
-                                                       HttpServletRequest request) {
+            HttpServletRequest request) {
         if (userQueryRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         long current = userQueryRequest.getCurrent();
         long size = userQueryRequest.getPageSize();
         // 限制爬虫
-        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
+        if (size > 20) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
         Page<User> userPage = userService.page(new Page<>(current, size),
                 userService.getQueryWrapper(userQueryRequest));
-        Page<UserVO> userVOPage = new Page<>(current, size, userPage.getTotal());
+        Page<UserVO> userVOPage = new Page<>(userPage.getCurrent(), userPage.getSize(), userPage.getTotal());
         List<UserVO> userVO = userService.getUserVO(userPage.getRecords());
         userVOPage.setRecords(userVO);
         return ResultUtils.success(userVOPage);
@@ -303,7 +338,7 @@ public class UserController {
      */
     @PostMapping("/update/my")
     public BaseResponse<Boolean> updateMyUser(@RequestBody UserUpdateMyRequest userUpdateMyRequest,
-                                              HttpServletRequest request) {
+            HttpServletRequest request) {
         if (userUpdateMyRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -311,40 +346,59 @@ public class UserController {
         User user = new User();
         BeanUtils.copyProperties(userUpdateMyRequest, user);
         user.setId(loginUser.getId());
-        boolean result = userService.updateById(user);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        if (!userService.updateById(user)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR);
+        }
         return ResultUtils.success(true);
     }
-
-
-
-    @PostMapping("/user-submissions")
-    public BaseResponse<UserCorrectionResult> saveUserResponse(@RequestBody UserEssaySubmission essaySubmission, HttpServletRequest request) {
-        if (essaySubmission == null || StringUtils.isBlank(essaySubmission.getAnswer())) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "答案不能为空");
-        }
-
-        // 保存用户的答案
-//        Long submissionId = userService.saveEssaySubmission(essaySubmission,correctionResult);
-
-        // 调用 AI 批改逻辑
-        UserCorrectionResult correctionResult = aiCorrectionService.correctAnswer(essaySubmission.getAnswer());
-
-        // 设置批改结果的其他信息
-        correctionResult.setSubmissionId(submissionId);
-        correctionResult.setCorrectionTime(LocalDateTime.now());
-
-        // 保存批改结果
-        userService.saveCorrectionResult(correctionResult);
-
-        return ResultUtils.success(correctionResult);
-    }
-
-
 
     @GetMapping("/user-submissions")
     public BaseResponse<List<FileEntity>> getUserSubmissions(@RequestParam Long userId) {
         List<FileEntity> submissions = userService.getUserSubmissions(userId);
         return ResultUtils.success(submissions);
+    }
+
+    /**
+     * 获取用户所有答题记录
+     */
+    @GetMapping("/question/records")
+    public BaseResponse<List<UserQuestionRecordVO>> getUserQuestionRecords(
+            @RequestParam Long userId,
+            HttpServletRequest request) {
+        if (userId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        UserQuestionRecordQueryRequest queryRequest = new UserQuestionRecordQueryRequest();
+        queryRequest.setUserId(userId);
+        List<UserQuestionRecordVO> records = userQuestionRecordService.listUserQuestionRecords(queryRequest);
+        return ResultUtils.success(records);
+    }
+
+    /**
+     * 获取用户某道题目的答题记录
+     */
+    @GetMapping("/question/record")
+    public BaseResponse<UserQuestionRecordVO> getUserQuestionRecord(
+            @RequestParam Long userId,
+            @RequestParam Long questionId,
+            HttpServletRequest request) {
+        if (userId <= 0 || questionId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        UserQuestionRecordQueryRequest queryRequest = new UserQuestionRecordQueryRequest();
+        queryRequest.setUserId(userId);
+        queryRequest.setQuestionId(questionId);
+        List<UserQuestionRecordVO> records = userQuestionRecordService.listUserQuestionRecords(queryRequest);
+        if (records == null || records.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "未找到该答题记录");
+        }
+        return ResultUtils.success(records.get(0));
+    }
+
+    /**
+     * 加密密码
+     */
+    private String encryptPassword(String password) {
+        return RSAUtils.encrypt(password);
     }
 }
