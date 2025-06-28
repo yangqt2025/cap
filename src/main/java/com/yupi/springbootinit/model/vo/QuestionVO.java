@@ -28,6 +28,11 @@ public class QuestionVO implements Serializable {
     private String content;
 
     /**
+     * 问题
+     */
+    private String question;
+
+    /**
      * 标签列表（json 数组）
      */
     private String tags;
@@ -93,6 +98,7 @@ public class QuestionVO implements Serializable {
         questionVO.setId(question.getId());
         questionVO.setTitle(question.getTitle());
         questionVO.setContent(question.getContent());
+        questionVO.setQuestion(question.getQuestion());
         questionVO.setTags(question.getTags());
         questionVO.setAnswer(question.getAnswer());
         questionVO.setAnalysis(question.getAnalysis());

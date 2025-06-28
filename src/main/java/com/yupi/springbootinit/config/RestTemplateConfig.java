@@ -15,9 +15,9 @@ public class RestTemplateConfig {
     public RestTemplate restTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         // 连接超时时间（毫秒）
-        factory.setConnectTimeout(10000);
+        factory.setConnectTimeout(120000);  // 2分钟
         // 读取超时时间（毫秒）
-        factory.setReadTimeout(30000);
+        factory.setReadTimeout(120000);     // 2分钟
         return new RestTemplate(factory);
     }
 } 

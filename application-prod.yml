@@ -1,35 +1,45 @@
-# 线上配置文件
-# @author <a href="https://github.com/liyupi">程序员鱼皮</a>
-# @from <a href="https://yupi.icu">编程导航知识星球</a>
 server:
   port: 8101
+  # 添加服务器超时配置
+  tomcat:
+    connection-timeout: 300000  # 连接超时时间：5分钟
+    max-keep-alive-requests: 100
+    keep-alive-timeout: 300000  # 保持连接超时时间：5分钟
+  # 添加请求超时配置
+  servlet:
+    session:
+      timeout: 300m  # session超时时间：5分钟
+
 spring:
   # 数据库配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://139.159.163.234:3306/aiagent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&connectTimeout=300000&socketTimeout=300000&autoReconnect=true&maxReconnects=10&rewriteBatchedStatements=true&createDatabaseIfNotExist=true
+    url: jdbc:mysql://139.159.163.234:3306/aiagent?useSSL=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&connectTimeout=300000&socketTimeout=300000&autoReconnect=true&maxReconnects=10&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
     username: root
     password: Mian2002@lmn
     hikari:
-      connection-timeout: 300000
+      connection-timeout: 300000  # 连接超时时间：5分钟
       maximum-pool-size: 10
       minimum-idle: 5
-      idle-timeout: 300000
+      idle-timeout: 300000  # 空闲连接超时时间：5分钟
       max-lifetime: 600000
       validation-timeout: 3000
       connection-test-query: SELECT 1
       initialization-fail-timeout: 0
       register-mbeans: true
+      # 添加Hikari连接池日志配置
       pool-name: HikariPool-aiagent
       leak-detection-threshold: 60000
+      # 添加连接池监控
       metrics-registry-name: aiagent
-  # JPA配置
+  # 添加SQL日志配置
   jpa:
-    database-platform: org.hibernate.dialect.MySQL5InnoDBDialect
-    hibernate:
-      ddl-auto: update
     show-sql: true
-  # 日志配置
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+  # 添加日志配置
   logging:
     level:
       com.zaxxer.hikari: DEBUG
@@ -41,6 +51,23 @@ spring:
     uris: http://139.159.163.234:9200
     username: root
     password: Mian2002@lmn
+    # 添加ES超时配置
+    connection-timeout: 300000  # 连接超时时间：5分钟
+    socket-timeout: 300000      # 套接字超时时间：5分钟
+
+# 添加Feign客户端超时配置
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 300000  # 连接超时时间：5分钟
+        readTimeout: 300000     # 读取超时时间：5分钟
+
+# 添加Ribbon超时配置
+ribbon:
+  ReadTimeout: 300000  # 读取超时时间：5分钟
+  ConnectTimeout: 300000  # 连接超时时间：5分钟
+
 mybatis-plus:
   configuration:
     # 生产环境关闭日志
@@ -63,3 +90,7 @@ knife4j:
     enable: true
     username: root
     password: 123456
+
+# JWT配置
+jwt:
+  secret: aiagent-jwt-secret-key-2024-06-08-8101 

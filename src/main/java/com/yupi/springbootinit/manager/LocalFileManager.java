@@ -12,7 +12,7 @@ import java.nio.file.Paths;
 @Component
 public class LocalFileManager {
 
-    private final String storageDirectory = "/Users/manydory/Downloads/springboot-init-master 2/files"; // 本地存储目录
+    private final String storageDirectory = "/Users/manydory/Downloads/aiagent/files"; // 本地存储目录
 
     public String saveFile(String filename, File file) throws IOException {
         // 确保存储目录存在

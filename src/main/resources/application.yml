@@ -3,10 +3,10 @@
 # @from <a href="https://yupi.icu">编程导航知识星球</a>
 spring:
   application:
-    name: springboot-init
-  # 默认 dev 环境
+    name: aiagent
+  # 默认 prod 环境
   profiles:
-    active: dev
+    active: prod
   # 支持 swagger3
   mvc:
     pathmatch:
@@ -20,24 +20,24 @@ spring:
   # 数据库配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://139.159.163.234:3306/aiagent?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf-8&connectTimeout=60000&socketTimeout=120000&autoReconnect=true&maxReconnects=10&rewriteBatchedStatements=true
+    url: jdbc:mysql://139.159.163.234:3306/aiagent?useSSL=false&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&connectTimeout=30000&socketTimeout=30000&autoReconnect=true&maxReconnects=10&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
     username: root
     password: Mian2002@lmn
     hikari:
-      connection-timeout: 60000
-      maximum-pool-size: 20
-      minimum-idle: 10
+      connection-timeout: 300000
+      maximum-pool-size: 10
+      minimum-idle: 5
       idle-timeout: 300000
-      max-lifetime: 1200000
-      validation-timeout: 5000
+      max-lifetime: 600000
+      validation-timeout: 3000
       connection-test-query: SELECT 1
       initialization-fail-timeout: 0
       register-mbeans: true
   # Hibernate 配置
   jpa:
-    database-platform: org.hibernate.dialect.MySQL8Dialect
+    database-platform: org.hibernate.dialect.MySQL5InnoDBDialect
     hibernate:
-      ddl-auto: none
+      ddl-auto: update
     show-sql: true
   # Redis 配置
   data:

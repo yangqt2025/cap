@@ -1,6 +1,5 @@
 package com.yupi.springbootinit.service.impl;
 
-
 import com.yupi.springbootinit.result.CorrectionResultDTO;
 import com.yupi.springbootinit.service.AICorrectionService;
 import org.springframework.stereotype.Service;
@@ -10,16 +9,23 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 @Service
 public class AICorrectionServiceImpl implements AICorrectionService {
 
     private static final String AI_CORRECTION_URL = "http://localhost:7299/aicorrection";
+    private final RestTemplate restTemplate;
+
+    public AICorrectionServiceImpl() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(300000); // 连接超时时间 5分钟
+        factory.setReadTimeout(300000);    // 读取超时时间 5分钟
+        this.restTemplate = new RestTemplate(factory);
+    }
 
     @Override
     public CorrectionResultDTO correctAnswer(String question, String userAnswer) {
-        RestTemplate restTemplate = new RestTemplate();
-
         // Prepare request payload
         String requestPayload = String.format("{\"question\": \"%s\", \"answer\": \"%s\"}", question, userAnswer);
 

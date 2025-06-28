@@ -142,13 +142,6 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务无响应");
         }
 
-        // 解析评分结果
-        if (!response.containsKey("content_score") || !response.containsKey("logic_score") || 
-            !response.containsKey("form_score") || !response.containsKey("grammar_score") || 
-            !response.containsKey("suggestion")) {
-            log.error("评分服务返回数据格式错误: {}", response);
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务返回数据格式错误");
-        }
 
         // 保存用户答题记录
         UserInterviewRecord record = new UserInterviewRecord();
@@ -184,13 +177,7 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         int comprehensive = (planScore + reactionScore + expressionScore + relationshipScore) * 3 / 7;
         
         // 使用翻倍后的分数计算最终得分
-        int finalScore = (int) Math.round(
-            comprehensive * 3 + 
-            planScore * 2 + 
-            reactionScore * 2 + 
-            expressionScore * 1 + 
-            relationshipScore * 2
-        );
+        int finalScore = planScore + reactionScore + expressionScore + relationshipScore + comprehensive;
         
         record.setComprehensive(comprehensive);
         record.setFinalScore(finalScore);
@@ -288,14 +275,8 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         int comprehensive = (int)((vo.getPlan() + vo.getReaction() + vo.getExpression() + vo.getRelationship()) * 3.0 / 7);
         vo.setComprehensive(comprehensive);
         
-        // 计算finalScore：comprehensive * 3 + plan * 2 + reaction * 2 + expression * 1 + relationship * 2
-        int finalScore = (int) Math.round(
-            comprehensive * 3 + 
-            vo.getPlan() * 2 + 
-            vo.getReaction() * 2 + 
-            vo.getExpression() * 1 + 
-            vo.getRelationship() * 2
-        );
+        // 计算finalScore：plan + reaction + expression + relationship + comprehensive
+        int finalScore = vo.getPlan() + vo.getReaction() + vo.getExpression() + vo.getRelationship() + comprehensive;
         vo.setFinalScore(finalScore);
         
         // 设置题目类型相关字段

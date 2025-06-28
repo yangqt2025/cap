@@ -297,6 +297,7 @@ public class JobServiceImpl extends ServiceImpl<JobMapper, Job> implements JobSe
             vo.setExamDate(job.getExamDate());
             vo.setRegistrationDate(job.getRegistrationDate());
             vo.setRegistrationStatus(job.getRegistrationStatus());
+            vo.setUrl(job.getUrl());
             
             // 设置订阅ID
             subscriptions.stream()

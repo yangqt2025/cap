@@ -15,6 +15,7 @@ import com.yupi.springbootinit.model.enums.QuestionCategoryEnum;
 import com.yupi.springbootinit.model.enums.QuestionTopicEnum;
 import com.yupi.springbootinit.model.enums.QuestionTypeEnum;
 import com.yupi.springbootinit.model.vo.AnswerSubmitResponse;
+import com.yupi.springbootinit.model.vo.AnswerSubmitVO;
 import com.yupi.springbootinit.model.vo.QuestionAnswerVO;
 import com.yupi.springbootinit.model.vo.QuestionVO;
 import com.yupi.springbootinit.model.vo.UserQuestionRecordVO;
@@ -56,6 +57,8 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * 题目服务实现类
@@ -84,8 +87,8 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     public void init() {
         // 配置 RestTemplate 的超时时间
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(60000); // 连接超时时间 60 秒
-        factory.setReadTimeout(120000);    // 读取超时时间 120 秒
+        factory.setConnectTimeout(300000); // 连接超时时间 5分钟
+        factory.setReadTimeout(300000);    // 读取超时时间 5分钟
         restTemplate.setRequestFactory(factory);
     }
 
@@ -109,11 +112,11 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         String topic = question.getTopic();
 
         // 创建时，参数不能为空
-        if (add) {
-            if (StringUtils.isAnyBlank(title, content, category, type, topic)) {
-                throw new BusinessException(ErrorCode.PARAMS_ERROR, "必填字段不能为空");
-            }
-        }
+//        if (add) {
+//            if (StringUtils.isAnyBlank(title, content, category, type, topic)) {
+//                throw new BusinessException(ErrorCode.PARAMS_ERROR, "必填字段不能为空");
+//            }
+//        }
         // 有参数则校验
         if (StringUtils.isNotBlank(title) && title.length() > 80) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "标题过长");
@@ -210,6 +213,8 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
      */
     private ResponseEntity<Map> callScoringServiceWithRetry(HttpEntity<Map<String, Object>> requestEntity, int maxRetries) {
         int retryCount = 0;
+        long baseDelay = 5000; // 基础延迟5秒
+        
         while (retryCount < maxRetries) {
             try {
                 log.info("开始调用评分服务，第{}次尝试", retryCount + 1);
@@ -225,10 +230,13 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     log.error("评分服务调用失败，已重试{}次: {}", maxRetries, e.getMessage());
                     throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务调用失败，请稍后重试");
                 }
-                log.warn("评分服务调用失败，准备第{}次重试: {}", retryCount + 1, e.getMessage());
+                
+                // 使用指数退避策略计算延迟时间
+                long delay = baseDelay * (long) Math.pow(2, retryCount - 1);
+                log.warn("评分服务调用失败，准备第{}次重试，等待{}秒: {}", retryCount + 1, delay/1000, e.getMessage());
+                
                 try {
-                    // 重试前等待一段时间
-                    Thread.sleep(2000 * retryCount);
+                    Thread.sleep(delay);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务调用被中断");
@@ -239,109 +247,230 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     }
 
     @Override
-    public AnswerSubmitResponse submitAnswer(AnswerSubmitRequest answerSubmitRequest, Long userId) {
-        if (answerSubmitRequest == null || answerSubmitRequest.getQuestionId() == null) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
-        }
-        
-        // 获取问题
-        Question question = this.getById(answerSubmitRequest.getQuestionId());
-        if (question == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "问题不存在");
-        }
-
-        // 构建请求体
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("question", question.getContent());
-        requestBody.put("student_answer", answerSubmitRequest.getUserAnswer());
-        requestBody.put("reference_answer", question.getAnswer());
-        requestBody.put("reference_analysis", question.getAnalysis());
-        requestBody.put("question_type", answerSubmitRequest.getQuestionType());
-
-        // 设置请求头
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        
-        // 创建请求实体
-        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
-
+    public AnswerSubmitVO submitAnswer(AnswerSubmitRequest answerSubmitRequest, Long userId) {
+        long start = System.currentTimeMillis();
         try {
+            if (answerSubmitRequest == null || answerSubmitRequest.getQuestionId() == null) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR);
+            }
+            
+            // 获取问题
+            Question question = this.getById(answerSubmitRequest.getQuestionId());
+            if (question == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "问题不存在");
+            }
+
+            // 构建请求体
+            Map<String, Object> requestBody = new HashMap<>();
+            // 将 content 和 question 用换行符拼接
+            String combinedQuestion = question.getContent();
+            if (StringUtils.isNotBlank(question.getQuestion())) {
+                combinedQuestion = question.getContent() + "\n" + question.getQuestion();
+            }
+            requestBody.put("question", combinedQuestion);
+            requestBody.put("student_answer", answerSubmitRequest.getUserAnswer());
+            requestBody.put("reference_answer", question.getAnswer());
+            requestBody.put("reference_analysis", question.getAnalysis());
+            requestBody.put("question_type", answerSubmitRequest.getQuestionType());
+
+            // 设置请求头
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            
+            // 创建请求实体
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
             // 调用评分服务（带重试机制）
             ResponseEntity<Map> response = callScoringServiceWithRetry(requestEntity, 3);
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 Map<String, Object> responseBody = response.getBody();
-                log.info("评分服务响应成功：{}", responseBody);
+                log.info("评分服务原始响应: {}", responseBody);
                 
-                // 获取evaluation部分
+                // 从evaluation对象中获取分数
                 Map<String, Object> evaluation = (Map<String, Object>) responseBody.get("evaluation");
+                log.info("evaluation对象: {}", evaluation);
+                
                 if (evaluation == null) {
-                    throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务返回数据格式错误：缺少evaluation字段");
+                    evaluation = new HashMap<>();
                 }
                 
-                // 创建响应对象
-                AnswerSubmitResponse answerSubmitResponse = new AnswerSubmitResponse();
-                answerSubmitResponse.setContentScore((Integer) evaluation.get("content_score"));
-                answerSubmitResponse.setLogicScore((Integer) evaluation.get("logic_score"));
-                answerSubmitResponse.setFormScore((Integer) evaluation.get("form_score"));
-                answerSubmitResponse.setGrammarScore((Integer) evaluation.get("grammar_score"));
-                answerSubmitResponse.setOverallSuggestion((String) evaluation.get("overall_comment"));
+                // 获取分数 - 尝试从不同位置获取
+                int contentScore = 0;
+                int logicScore = 0;
+                int formScore = 0;
+                int grammarScore = 0;
                 
-                // 处理detailedFeedback
-                Map<String, Object> detailedFeedback = (Map<String, Object>) evaluation.get("detailed_feedback");
+                // 首先尝试从evaluation中获取
+                if (evaluation.get("content_score") != null) {
+                    contentScore = Integer.parseInt(evaluation.get("content_score").toString());
+                } else if (responseBody.get("content_score") != null) {
+                    contentScore = Integer.parseInt(responseBody.get("content_score").toString());
+                } else if (evaluation.get("content") != null) {
+                    Map<String, Object> content = (Map<String, Object>) evaluation.get("content");
+                    if (content.get("score") != null) {
+                        contentScore = Integer.parseInt(content.get("score").toString());
+                    }
+                }
+                
+                if (evaluation.get("logic_score") != null) {
+                    logicScore = Integer.parseInt(evaluation.get("logic_score").toString());
+                } else if (responseBody.get("logic_score") != null) {
+                    logicScore = Integer.parseInt(responseBody.get("logic_score").toString());
+                } else if (evaluation.get("logic") != null) {
+                    Map<String, Object> logic = (Map<String, Object>) evaluation.get("logic");
+                    if (logic.get("score") != null) {
+                        logicScore = Integer.parseInt(logic.get("score").toString());
+                    }
+                }
+                
+                if (evaluation.get("form_score") != null) {
+                    formScore = Integer.parseInt(evaluation.get("form_score").toString());
+                } else if (responseBody.get("form_score") != null) {
+                    formScore = Integer.parseInt(responseBody.get("form_score").toString());
+                } else if (evaluation.get("form") != null) {
+                    Map<String, Object> form = (Map<String, Object>) evaluation.get("form");
+                    if (form.get("score") != null) {
+                        formScore = Integer.parseInt(form.get("score").toString());
+                    }
+                }
+                
+                if (evaluation.get("grammar_score") != null) {
+                    grammarScore = Integer.parseInt(evaluation.get("grammar_score").toString());
+                } else if (responseBody.get("grammar_score") != null) {
+                    grammarScore = Integer.parseInt(responseBody.get("grammar_score").toString());
+                } else if (evaluation.get("language") != null) {
+                    Map<String, Object> language = (Map<String, Object>) evaluation.get("language");
+                    if (language.get("grammar_score") != null) {
+                        grammarScore = Integer.parseInt(language.get("grammar_score").toString());
+                    }
+                }
+                
+                log.info("解析的分数 - contentScore: {}, logicScore: {}, formScore: {}, grammarScore: {}", 
+                    contentScore, logicScore, formScore, grammarScore);
+                
+                // 计算总分：(content_score + logic_score + form_score + grammar_score) / 4 * 10
+                contentScore = contentScore*10;
+                logicScore = logicScore*10;
+                formScore = formScore*10;
+                grammarScore=grammarScore*10;
+                double finalScore = (contentScore + logicScore + formScore + grammarScore) / 4.0 * 10;
+                int roundedFinalScore = (int) Math.round(finalScore);
+                
+                log.info("计算的finalScore: {}", roundedFinalScore);
+                
+                // 创建AnswerSubmitResponse对象用于保存记录
+                AnswerSubmitResponse answerSubmitResponse = new AnswerSubmitResponse();
+                answerSubmitResponse.setContentScore(contentScore);
+                answerSubmitResponse.setLogicScore(logicScore);
+                answerSubmitResponse.setFormScore(formScore);
+                answerSubmitResponse.setGrammarScore(grammarScore);
+                
+                // 设置总体建议
+                String overallSuggestion = null;
+                if (evaluation.get("overall_suggestion") != null) {
+                    overallSuggestion = evaluation.get("overall_suggestion").toString();
+                } else if (responseBody.get("overall_suggestion") != null) {
+                    overallSuggestion = responseBody.get("overall_suggestion").toString();
+                } else if (responseBody.get("suggestion") != null) {
+                    overallSuggestion = responseBody.get("suggestion").toString();
+                } else if (evaluation.get("overall") != null) {
+                    Map<String, Object> overall = (Map<String, Object>) evaluation.get("overall");
+                    if (overall.get("suggestion") != null) {
+                        overallSuggestion = overall.get("suggestion").toString();
+                    }
+                }
+                answerSubmitResponse.setOverallSuggestion(overallSuggestion);
+                
+                log.info("设置的总体建议: {}", overallSuggestion);
+                
+                // 处理详细反馈
+                Map<String, Object> detailedFeedback = (Map<String, Object>) evaluation.get("detailed_comments");
+                if (detailedFeedback == null) {
+                    detailedFeedback = (Map<String, Object>) responseBody.get("detailed_feedback");
+                }
+                if (detailedFeedback == null && evaluation.get("overall") != null) {
+                    detailedFeedback = (Map<String, Object>) evaluation.get("overall");
+                }
+                
+                log.info("获取到的详细反馈: {}", detailedFeedback);
+                
                 if (detailedFeedback != null) {
                     AnswerSubmitResponse.DetailedFeedback feedback = new AnswerSubmitResponse.DetailedFeedback();
                     
                     // 处理优点
-                    List<String> strengths = new ArrayList<>();
-                    if (detailedFeedback.get("content") != null) {
-                        strengths.add("内容：" + detailedFeedback.get("content"));
+                    List<String> strengths = (List<String>) detailedFeedback.get("strengths");
+                    if (strengths != null) {
+                        feedback.setStrengths(strengths);
+                        log.info("从详细反馈中获取到优点: {}", strengths);
                     }
-                    if (detailedFeedback.get("structure") != null) {
-                        strengths.add("结构：" + detailedFeedback.get("structure"));
-                    }
-                    if (detailedFeedback.get("language") != null) {
-                        strengths.add("语言：" + detailedFeedback.get("language"));
-                    }
-                    if (detailedFeedback.get("format") != null) {
-                        strengths.add("格式：" + detailedFeedback.get("format"));
-                    }
-                    feedback.setStrengths(strengths);
                     
                     // 处理改进建议
-                    List<String> improvements = (List<String>) evaluation.get("improvement_suggestions");
-                    if (improvements != null) {
-                        feedback.setAreasForImprovement(improvements);
+                    List<String> improvements = new ArrayList<>();
+                    List<String> languageIssues = (List<String>) detailedFeedback.get("language_issues");
+                    if (languageIssues != null) {
+                        improvements.addAll(languageIssues);
+                        log.info("从详细反馈中获取到语言问题: {}", languageIssues);
                     }
+                    List<String> improvementSuggestions = (List<String>) detailedFeedback.get("improvement_suggestions");
+                    if (improvementSuggestions != null) {
+                        improvements.addAll(improvementSuggestions);
+                        log.info("从详细反馈中获取到改进建议: {}", improvementSuggestions);
+                    }
+                    List<String> improvementsList = (List<String>) detailedFeedback.get("improvements");
+                    if (improvementsList != null) {
+                        improvements.addAll(improvementsList);
+                        log.info("从详细反馈中获取到改进点: {}", improvementsList);
+                    }
+                    feedback.setAreasForImprovement(improvements);
                     
                     // 处理具体建议
-                    List<String> suggestions = new ArrayList<>();
-                    if (evaluation.get("additional_notes") != null) {
-                        suggestions.add((String) evaluation.get("additional_notes"));
+                    List<String> suggestions = (List<String>) detailedFeedback.get("suggestions");
+                    if (suggestions != null) {
+                        feedback.setSpecificSuggestions(suggestions);
+                        log.info("从详细反馈中获取到具体建议: {}", suggestions);
+                    } else if (improvementSuggestions != null) {
+                        feedback.setSpecificSuggestions(improvementSuggestions);
                     }
-                    feedback.setSpecificSuggestions(suggestions);
                     
                     answerSubmitResponse.setDetailedFeedback(feedback);
+                    log.info("设置的详细反馈对象: {}", feedback);
+                } else {
+                    log.warn("未找到详细反馈信息");
                 }
                 
-                // 保存答题记录
-                UserQuestionRecord record = saveUserQuestionRecord(userId, answerSubmitRequest.getQuestionId(), 
-                    answerSubmitRequest.getUserAnswer(), answerSubmitResponse, answerSubmitRequest);
+                // 保存答题记录并获取recordId
+                UserQuestionRecord record = saveUserQuestionRecord(
+                    userId,
+                    answerSubmitRequest.getQuestionId(),
+                    answerSubmitRequest.getUserAnswer(),
+                    answerSubmitResponse,
+                    answerSubmitRequest
+                );
                 
-                // 设置返回信息
-                answerSubmitResponse.setRecordId(record.getId());
-                answerSubmitResponse.setUserId(userId);
-                answerSubmitResponse.setQuestionId(question.getId());
-                answerSubmitResponse.setQuestionContent(question.getContent());
+                // 设置finalScore到记录中
+                record.setFinalScore(roundedFinalScore);
                 
-                return answerSubmitResponse;
+                // 创建简化的返回对象
+                AnswerSubmitVO result = new AnswerSubmitVO();
+                result.setRecordId(record.getId());
+                result.setUserId(record.getUserId());
+                result.setQuestionId(record.getQuestionId());
+                result.setContentScore(record.getContentScore());
+                result.setLogicScore(record.getLogicScore());
+                result.setFormatScore(record.getFormatScore());
+                result.setGrammarScore(record.getGrammarScore());
+                result.setFinalScore(record.getFinalScore());
+                
+                log.info("最终返回的简化结果: {}", result);
+                
+                return result;
             } else {
-                log.error("评分服务响应异常，状态码：{}，响应体：{}", response.getStatusCode(), response.getBody());
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务响应异常");
             }
-        } catch (Exception e) {
-            log.error("评分服务调用失败：{}", e.getMessage(), e);
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务调用失败：" + e.getMessage());
+        } finally {
+            long end = System.currentTimeMillis();
+            log.info("submitAnswer接口处理耗时: {} ms", (end - start));
         }
     }
 
@@ -349,42 +478,101 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
      * 保存用户答题记录
      */
     private UserQuestionRecord saveUserQuestionRecord(Long userId, Long questionId, String userAnswer, AnswerSubmitResponse response, AnswerSubmitRequest answerSubmitRequest) {
+        if (answerSubmitRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "答题请求参数不能为空");
+        }
+        if (response == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "评分响应不能为空");
+        }
+        
         UserQuestionRecord record = new UserQuestionRecord();
         record.setUserId(userId);
         record.setQuestionId(questionId);
         record.setUserAnswer(userAnswer);
         
+        // 安全地获取各项分数
+        Integer contentScore = response.getContentScore();
+        Integer formScore = response.getFormScore();
+        Integer grammarScore = response.getGrammarScore();
+        Integer logicScore = response.getLogicScore();
+        
+        // 设置默认值
+        contentScore = contentScore != null ? contentScore : 0;
+        formScore = formScore != null ? formScore : 0;
+        grammarScore = grammarScore != null ? grammarScore : 0;
+        logicScore = logicScore != null ? logicScore : 0;
+        
         // 计算总分
-        double totalScore = (response.getContentScore() * 0.7 + 
-                           response.getFormScore() * 0.1 + 
-                           response.getGrammarScore() * 0.1 + 
-                           response.getLogicScore() * 0.1) * 2;
+        double totalScore = (contentScore * 0.7 + 
+                           formScore * 0.1 + 
+                           grammarScore * 0.1 + 
+                           logicScore * 0.1) * 2;
         record.setSum(totalScore);
         
+        // 计算finalScore：(content_score + logic_score + form_score + grammar_score) / 4 * 10
+        double finalScore = (contentScore + logicScore + formScore + grammarScore) / 4.0 * 10;
+        int roundedFinalScore = (int) Math.round(finalScore);
+        record.setFinalScore(roundedFinalScore);
+        
         // 设置各项分数
-        record.setContentScore(response.getContentScore());
-        record.setLogicScore(response.getLogicScore());
-        record.setFormatScore(response.getFormScore());
-        record.setGrammarScore(response.getGrammarScore());
+        record.setContentScore(contentScore);
+        record.setLogicScore(logicScore);
+        record.setFormatScore(formScore);
+        record.setGrammarScore(grammarScore);
         
         // 设置建议和反馈
-        record.setSuggestion(response.getOverallSuggestion());
-        record.setQuestionType(answerSubmitRequest.getQuestionType());
+        String overallSuggestion = response.getOverallSuggestion();
+        record.setSuggestion(overallSuggestion != null ? overallSuggestion : "");
+        record.setOverallSuggestion(overallSuggestion);
+        
+        log.info("设置的overallSuggestion: {}", overallSuggestion);
+        
+        // 安全地设置问题类型
+        String questionType = answerSubmitRequest.getQuestionType();
+        if (questionType != null) {
+            record.setQuestionType(questionType);
+        }
         
         // 设置详细反馈
         if (response.getDetailedFeedback() != null) {
-            record.setAnalysisStrengths(String.join(";", response.getDetailedFeedback().getStrengths()));
-            record.setAnalysisImprovements(String.join(";", response.getDetailedFeedback().getAreasForImprovement()));
-            record.setSuggestions(String.join(";", response.getDetailedFeedback().getSpecificSuggestions()));
+            log.info("开始处理详细反馈: {}", response.getDetailedFeedback());
+            
+            // 处理优点
+            List<String> strengths = response.getDetailedFeedback().getStrengths();
+            if (strengths != null && !strengths.isEmpty()) {
+                String strengthsStr = String.join(";", strengths);
+                record.setAnalysisStrengths(strengthsStr);
+                log.info("设置优点: {}", strengthsStr);
+            }
+            
+            // 处理改进建议
+            List<String> improvements = response.getDetailedFeedback().getAreasForImprovement();
+            if (improvements != null && !improvements.isEmpty()) {
+                String improvementsStr = String.join(";", improvements);
+                record.setAnalysisImprovements(improvementsStr);
+                log.info("设置改进建议: {}", improvementsStr);
+            }
+            
+            // 处理具体建议
+            List<String> suggestions = response.getDetailedFeedback().getSpecificSuggestions();
+            if (suggestions != null && !suggestions.isEmpty()) {
+                String suggestionsStr = String.join(";", suggestions);
+                record.setSuggestions(suggestionsStr);
+                log.info("设置具体建议: {}", suggestionsStr);
+            }
+        } else {
+            log.warn("response.getDetailedFeedback() 为 null");
         }
         
-        record.setOverallSuggestion(response.getOverallSuggestion());
+        log.info("保存前的记录对象: {}", record);
         
         boolean saved = userQuestionRecordService.save(record);
         if (!saved) {
             log.error("Failed to save user question record for userId: {}, questionId: {}", userId, questionId);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "保存用户答题记录失败");
         }
+        
+        log.info("成功保存答题记录，recordId: {}", record.getId());
         
         return record;
     }
@@ -621,5 +809,235 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "创建题目失败");
         }
         return question.getId();
+    }
+
+    /**
+     * 获取评分服务的原始响应
+     * @param answerSubmitRequest 答题请求
+     * @return 评分服务的原始响应
+     */
+    @Override
+    public Map<String, Object> getScoringServiceResponse(AnswerSubmitRequest answerSubmitRequest, HttpServletRequest request) {
+        if (answerSubmitRequest == null || answerSubmitRequest.getQuestionId() == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        
+        // 获取问题
+        Question question = this.getById(answerSubmitRequest.getQuestionId());
+        if (question == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "问题不存在");
+        }
+
+        // 构建请求体
+        Map<String, Object> requestBody = new HashMap<>();
+        // 将 content 和 question 用换行符拼接
+        String combinedQuestion = question.getContent();
+        if (StringUtils.isNotBlank(question.getQuestion())) {
+            combinedQuestion = question.getContent() + "\n" + question.getQuestion();
+        }
+        requestBody.put("question", combinedQuestion);
+        requestBody.put("student_answer", answerSubmitRequest.getUserAnswer());
+        requestBody.put("reference_answer", question.getAnswer());
+        requestBody.put("reference_analysis", question.getAnalysis());
+        requestBody.put("question_type", answerSubmitRequest.getQuestionType());
+
+        // 设置请求头
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        
+        // 创建请求实体
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+
+        try {
+            // 调用评分服务（带重试机制）
+            ResponseEntity<Map> response = callScoringServiceWithRetry(requestEntity, 3);
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                Map<String, Object> responseBody = response.getBody();
+                log.info("评分服务原始响应: {}", responseBody);
+                
+                // 从evaluation对象中获取分数
+                Map<String, Object> evaluation = (Map<String, Object>) responseBody.get("evaluation");
+                log.info("evaluation对象: {}", evaluation);
+                
+                if (evaluation == null) {
+                    evaluation = new HashMap<>();
+                }
+                
+                // 获取分数 - 尝试从不同位置获取
+                int contentScore = 0;
+                int logicScore = 0;
+                int formScore = 0;
+                int grammarScore = 0;
+                
+                // 首先尝试从evaluation中获取
+                if (evaluation.get("content_score") != null) {
+                    contentScore = Integer.parseInt(evaluation.get("content_score").toString());
+                } else if (responseBody.get("content_score") != null) {
+                    contentScore = Integer.parseInt(responseBody.get("content_score").toString());
+                } else if (evaluation.get("content") != null) {
+                    Map<String, Object> content = (Map<String, Object>) evaluation.get("content");
+                    if (content.get("score") != null) {
+                        contentScore = Integer.parseInt(content.get("score").toString());
+                    }
+                }
+                
+                if (evaluation.get("logic_score") != null) {
+                    logicScore = Integer.parseInt(evaluation.get("logic_score").toString());
+                } else if (responseBody.get("logic_score") != null) {
+                    logicScore = Integer.parseInt(responseBody.get("logic_score").toString());
+                } else if (evaluation.get("logic") != null) {
+                    Map<String, Object> logic = (Map<String, Object>) evaluation.get("logic");
+                    if (logic.get("score") != null) {
+                        logicScore = Integer.parseInt(logic.get("score").toString());
+                    }
+                }
+                
+                if (evaluation.get("form_score") != null) {
+                    formScore = Integer.parseInt(evaluation.get("form_score").toString());
+                } else if (responseBody.get("form_score") != null) {
+                    formScore = Integer.parseInt(responseBody.get("form_score").toString());
+                } else if (evaluation.get("form") != null) {
+                    Map<String, Object> form = (Map<String, Object>) evaluation.get("form");
+                    if (form.get("score") != null) {
+                        formScore = Integer.parseInt(form.get("score").toString());
+                    }
+                }
+                
+                if (evaluation.get("grammar_score") != null) {
+                    grammarScore = Integer.parseInt(evaluation.get("grammar_score").toString());
+                } else if (responseBody.get("grammar_score") != null) {
+                    grammarScore = Integer.parseInt(responseBody.get("grammar_score").toString());
+                } else if (evaluation.get("language") != null) {
+                    Map<String, Object> language = (Map<String, Object>) evaluation.get("language");
+                    if (language.get("grammar_score") != null) {
+                        grammarScore = Integer.parseInt(language.get("grammar_score").toString());
+                    }
+                }
+                
+                log.info("解析的分数 - contentScore: {}, logicScore: {}, formScore: {}, grammarScore: {}", 
+                    contentScore, logicScore, formScore, grammarScore);
+                
+                // 计算总分：(content_score + logic_score + form_score + grammar_score) / 4 * 10
+                double finalScore = (contentScore + logicScore + formScore + grammarScore) / 4.0 * 10;
+                int roundedFinalScore = (int) Math.round(finalScore);
+                
+                log.info("计算的finalScore: {}", roundedFinalScore);
+                
+                // 创建AnswerSubmitResponse对象用于保存记录
+                AnswerSubmitResponse answerSubmitResponse = new AnswerSubmitResponse();
+                answerSubmitResponse.setContentScore(contentScore);
+                answerSubmitResponse.setLogicScore(logicScore);
+                answerSubmitResponse.setFormScore(formScore);
+                answerSubmitResponse.setGrammarScore(grammarScore);
+                
+                // 设置总体建议
+                String overallSuggestion = null;
+                if (evaluation.get("overall_suggestion") != null) {
+                    overallSuggestion = evaluation.get("overall_suggestion").toString();
+                } else if (responseBody.get("overall_suggestion") != null) {
+                    overallSuggestion = responseBody.get("overall_suggestion").toString();
+                } else if (responseBody.get("suggestion") != null) {
+                    overallSuggestion = responseBody.get("suggestion").toString();
+                } else if (evaluation.get("overall") != null) {
+                    Map<String, Object> overall = (Map<String, Object>) evaluation.get("overall");
+                    if (overall.get("suggestion") != null) {
+                        overallSuggestion = overall.get("suggestion").toString();
+                    }
+                }
+                answerSubmitResponse.setOverallSuggestion(overallSuggestion);
+                
+                log.info("设置的总体建议: {}", overallSuggestion);
+                
+                // 处理详细反馈
+                Map<String, Object> detailedFeedback = (Map<String, Object>) evaluation.get("detailed_comments");
+                if (detailedFeedback == null) {
+                    detailedFeedback = (Map<String, Object>) responseBody.get("detailed_feedback");
+                }
+                if (detailedFeedback == null && evaluation.get("overall") != null) {
+                    detailedFeedback = (Map<String, Object>) evaluation.get("overall");
+                }
+                
+                log.info("获取到的详细反馈: {}", detailedFeedback);
+                
+                if (detailedFeedback != null) {
+                    AnswerSubmitResponse.DetailedFeedback feedback = new AnswerSubmitResponse.DetailedFeedback();
+                    
+                    // 处理优点
+                    List<String> strengths = (List<String>) detailedFeedback.get("strengths");
+                    if (strengths != null) {
+                        feedback.setStrengths(strengths);
+                        log.info("从详细反馈中获取到优点: {}", strengths);
+                    }
+                    
+                    // 处理改进建议
+                    List<String> improvements = new ArrayList<>();
+                    List<String> languageIssues = (List<String>) detailedFeedback.get("language_issues");
+                    if (languageIssues != null) {
+                        improvements.addAll(languageIssues);
+                        log.info("从详细反馈中获取到语言问题: {}", languageIssues);
+                    }
+                    List<String> improvementSuggestions = (List<String>) detailedFeedback.get("improvement_suggestions");
+                    if (improvementSuggestions != null) {
+                        improvements.addAll(improvementSuggestions);
+                        log.info("从详细反馈中获取到改进建议: {}", improvementSuggestions);
+                    }
+                    List<String> improvementsList = (List<String>) detailedFeedback.get("improvements");
+                    if (improvementsList != null) {
+                        improvements.addAll(improvementsList);
+                        log.info("从详细反馈中获取到改进点: {}", improvementsList);
+                    }
+                    feedback.setAreasForImprovement(improvements);
+                    
+                    // 处理具体建议
+                    List<String> suggestions = (List<String>) detailedFeedback.get("suggestions");
+                    if (suggestions != null) {
+                        feedback.setSpecificSuggestions(suggestions);
+                        log.info("从详细反馈中获取到具体建议: {}", suggestions);
+                    } else if (improvementSuggestions != null) {
+                        feedback.setSpecificSuggestions(improvementSuggestions);
+                    }
+                    
+                    answerSubmitResponse.setDetailedFeedback(feedback);
+                    log.info("设置的详细反馈对象: {}", feedback);
+                } else {
+                    log.warn("未找到详细反馈信息");
+                }
+                
+                // 从请求头获取userId
+                String userIdStr = request.getHeader("userId");
+                if (StringUtils.isBlank(userIdStr)) {
+                    throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户ID不能为空");
+                }
+                
+                Long userId;
+                try {
+                    userId = Long.parseLong(userIdStr);
+                } catch (NumberFormatException e) {
+                    throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户ID格式不正确");
+                }
+                
+                // 保存答题记录并获取recordId
+                UserQuestionRecord record = saveUserQuestionRecord(
+                    userId,
+                    answerSubmitRequest.getQuestionId(),
+                    answerSubmitRequest.getUserAnswer(),
+                    answerSubmitResponse,
+                    answerSubmitRequest
+                );
+                
+                // 设置recordId
+                responseBody.put("recordId", record.getId());
+                
+                log.info("最终响应体：{}", responseBody);
+                return responseBody;
+            } else {
+                log.error("评分服务响应异常，状态码：{}，响应体：{}", response.getStatusCode(), response.getBody());
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务响应异常");
+            }
+        } catch (Exception e) {
+            log.error("调用评分服务失败：", e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "调用评分服务失败：" + e.getMessage());
+        }
     }
 } 

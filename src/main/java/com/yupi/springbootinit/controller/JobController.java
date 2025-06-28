@@ -39,14 +39,24 @@ public class JobController {
     /**
      * 获取岗位列表
      *
-     * @param jobQueryRequest
-     * @param request
+     * @param region
+     * @param registrationStatus
+     * @param competitionLevel
+     * @param isCompiled
      * @return
      */
     @RequestMapping(value = "/list", method = {RequestMethod.GET, RequestMethod.POST})
-    public BaseResponse<List<JobVO>> listJobs(@RequestBody(required = false) JobQueryRequest jobQueryRequest,
-                                            HttpServletRequest request) {
-        return ResultUtils.success(jobService.getJobList(jobQueryRequest, request));
+    public BaseResponse<List<JobVO>> listJobs(
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String registrationStatus,
+            @RequestParam(required = false) String competitionLevel,
+            @RequestParam(required = false) Integer isCompiled) {
+        JobQueryRequest jobQueryRequest = new JobQueryRequest();
+        jobQueryRequest.setRegion(region);
+        jobQueryRequest.setRegistrationStatus(registrationStatus);
+        jobQueryRequest.setCompetitionLevel(competitionLevel);
+        jobQueryRequest.setIsCompiled(isCompiled);
+        return ResultUtils.success(jobService.listJobs(jobQueryRequest));
     }
 
     /**

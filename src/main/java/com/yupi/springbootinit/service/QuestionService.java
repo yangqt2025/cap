@@ -15,9 +15,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.yupi.springbootinit.model.dto.question.QuestionAddRequest;
 import com.yupi.springbootinit.model.dto.question.QuestionEditRequest;
 import com.yupi.springbootinit.model.dto.question.DeleteRequest;
+import com.yupi.springbootinit.model.vo.AnswerSubmitVO;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 题目服务
@@ -67,7 +69,7 @@ public interface QuestionService extends IService<Question> {
      * @param userId
      * @return
      */
-    AnswerSubmitResponse submitAnswer(AnswerSubmitRequest answerSubmitRequest, Long userId);
+    AnswerSubmitVO submitAnswer(AnswerSubmitRequest answerSubmitRequest, Long userId);
 
     /**
      * 获取题目答案和点评
@@ -155,4 +157,12 @@ public interface QuestionService extends IService<Question> {
      * @return
      */
     Question retryQuestion(Long questionId);
+
+    /**
+     * 获取评分服务的原始响应
+     * @param answerSubmitRequest 答题请求
+     * @param request HTTP请求
+     * @return 评分服务的原始响应
+     */
+    Map<String, Object> getScoringServiceResponse(AnswerSubmitRequest answerSubmitRequest, HttpServletRequest request);
 } 

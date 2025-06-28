@@ -52,6 +52,11 @@ public class AnswerSubmitResponse implements Serializable {
     private Integer grammarScore;
 
     /**
+     * 最终得分
+     */
+    private Integer finalScore;
+
+    /**
      * 详细反馈
      */
     private DetailedFeedback detailedFeedback;

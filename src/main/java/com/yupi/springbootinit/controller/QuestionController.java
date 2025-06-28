@@ -6,11 +6,13 @@ import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.common.ResultUtils;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.model.dto.question.AnswerSubmitRequest;
+import com.yupi.springbootinit.model.dto.question.QuestionAddRequest;
 import com.yupi.springbootinit.model.dto.question.QuestionQueryRequest;
 import com.yupi.springbootinit.model.entity.Question;
 import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.entity.UserQuestionRecord;
 import com.yupi.springbootinit.model.vo.AnswerSubmitResponse;
+import com.yupi.springbootinit.model.vo.AnswerSubmitVO;
 import com.yupi.springbootinit.model.vo.QuestionAnswerVO;
 import com.yupi.springbootinit.model.vo.QuestionVO;
 import com.yupi.springbootinit.model.vo.UserQuestionRecordVO;
@@ -20,12 +22,14 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 题目接口
@@ -101,7 +105,7 @@ public class QuestionController {
      */
     @PostMapping("/submit")
     @ApiOperation("提交答案")
-    public BaseResponse<AnswerSubmitResponse> submitAnswer(@RequestBody AnswerSubmitRequest answerSubmitRequest,
+    public BaseResponse<AnswerSubmitVO> submitAnswer(@RequestBody AnswerSubmitRequest answerSubmitRequest,
                                                          HttpServletRequest request) {
         if (answerSubmitRequest == null || answerSubmitRequest.getQuestionId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -128,8 +132,8 @@ public class QuestionController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户ID格式不正确");
         }
         
-        AnswerSubmitResponse answerSubmitResponse = questionService.submitAnswer(answerSubmitRequest, userId);
-        return ResultUtils.success(answerSubmitResponse);
+        AnswerSubmitVO result = questionService.submitAnswer(answerSubmitRequest, userId);
+        return ResultUtils.success(result);
     }
 
     /**
@@ -150,31 +154,21 @@ public class QuestionController {
     /**
      * 创建题目
      *
-     * @param question
+     * @param questionAddRequest
      * @param request
      * @return
      */
     @PostMapping("/add")
-    public BaseResponse<Long> addQuestion(@RequestBody Question question, HttpServletRequest request) {
-        if (question == null) {
+    public BaseResponse<Long> addQuestion(@RequestBody QuestionAddRequest questionAddRequest,
+            HttpServletRequest request) {
+        if (questionAddRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        // 校验题目
+        Question question = new Question();
+        BeanUtils.copyProperties(questionAddRequest, question);
         questionService.validQuestion(question, true);
-        // 设置默认答案
-        if (StringUtils.isBlank(question.getAnswer())) {
-            question.setAnswer("暂无答案");
-        }
-        // 设置默认分析
-        if (StringUtils.isBlank(question.getAnalysis())) {
-            question.setAnalysis("暂无分析");
-        }
-        // 保存题目
-        boolean result = questionService.save(question);
-        if (!result) {
-            throw new BusinessException(ErrorCode.OPERATION_ERROR);
-        }
-        return ResultUtils.success(question.getId());
+        long result = questionService.addQuestion(questionAddRequest, request);
+        return ResultUtils.success(result);
     }
 
     @GetMapping("/record/list")
@@ -195,5 +189,26 @@ public class QuestionController {
         Question question = questionService.retryQuestion(questionId);
         QuestionVO questionVO = questionService.getQuestionVO(question, request);
         return ResultUtils.success(questionVO);
+    }
+
+    /**
+     * 获取评分服务的原始响应
+     *
+     * @param answerSubmitRequest
+     * @param request
+     * @return
+     */
+    @PostMapping("/get_scoring_response")
+    public BaseResponse<Map<String, Object>> getScoringServiceResponse(@RequestBody AnswerSubmitRequest answerSubmitRequest,
+                                                                     HttpServletRequest request) {
+        if (answerSubmitRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        log.info("接收到评分请求：{}", answerSubmitRequest);
+        Map<String, Object> response = questionService.getScoringServiceResponse(answerSubmitRequest, request);
+        log.info("Service返回的响应：{}", response);
+        BaseResponse<Map<String, Object>> baseResponse = ResultUtils.success(response);
+        log.info("最终返回的响应：{}", baseResponse);
+        return baseResponse;
     }
 } 

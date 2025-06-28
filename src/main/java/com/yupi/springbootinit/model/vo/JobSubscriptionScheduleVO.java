@@ -59,5 +59,10 @@ public class JobSubscriptionScheduleVO implements Serializable {
      */
     private String registrationStatus;
 
+    /**
+     * 岗位详情URL
+     */
+    private String url;
+
     private static final long serialVersionUID = 1L;
 } 

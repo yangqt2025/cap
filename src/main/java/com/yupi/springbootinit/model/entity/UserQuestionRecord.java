@@ -60,6 +60,12 @@ public class UserQuestionRecord implements Serializable {
     private Double sum;
 
     /**
+     * 最终得分
+     */
+    @TableField("final_score")
+    private Integer finalScore;
+
+    /**
      * 建议
      */
     private String suggestion;

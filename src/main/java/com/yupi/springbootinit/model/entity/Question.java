@@ -30,6 +30,11 @@ public class Question implements Serializable {
     private String content;
 
     /**
+     * 问题
+     */
+    private String question;
+
+    /**
      * 标签列表（json 数组）
      */
     private String tags;
