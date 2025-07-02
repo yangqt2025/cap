@@ -14,6 +14,7 @@ import com.yupi.springbootinit.model.vo.InterviewQuestionVO;
 import com.yupi.springbootinit.model.vo.UserInterviewRecordVO;
 import com.yupi.springbootinit.model.vo.UserAllRecordVO;
 import com.yupi.springbootinit.model.vo.UserQuestionRecordVO;
+import com.yupi.springbootinit.model.vo.InterviewSubmitVO;
 import com.yupi.springbootinit.service.InterviewQuestionService;
 import com.yupi.springbootinit.service.QuestionService;
 import lombok.extern.slf4j.Slf4j;
@@ -61,14 +62,14 @@ public class InterviewQuestionController {
     }
 
     @PostMapping("/submit")
-    public BaseResponse<UserInterviewRecord> submitAnswer(@RequestBody SubmitAnswerRequest submitAnswerRequest,
+    public BaseResponse<InterviewSubmitVO> submitAnswer(@RequestBody SubmitAnswerRequest submitAnswerRequest,
                                                          HttpServletRequest request) {
         if (submitAnswerRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         Long questionId = submitAnswerRequest.getQuestionId();
         String userAnswer = submitAnswerRequest.getUserAnswer();
-        UserInterviewRecord result = interviewQuestionService.submitAnswer(questionId, userAnswer, request);
+        InterviewSubmitVO result = interviewQuestionService.submitAnswerWithVO(questionId, userAnswer, request);
         return ResultUtils.success(result);
     }
 

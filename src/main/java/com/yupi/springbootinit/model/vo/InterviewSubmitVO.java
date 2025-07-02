@@ -4,10 +4,10 @@ import lombok.Data;
 import java.io.Serializable;
 
 /**
- * 答题提交结果视图
+ * 面试题提交响应视图
  */
 @Data
-public class AnswerSubmitVO implements Serializable {
+public class InterviewSubmitVO implements Serializable {
 
     /**
      * 记录ID
@@ -25,24 +25,29 @@ public class AnswerSubmitVO implements Serializable {
     private Long questionId;
 
     /**
-     * 内容得分
+     * 计划能力得分 (content_score * 2)
      */
-    private Integer contentScore;
+    private Integer plan;
 
     /**
-     * 逻辑得分
+     * 反应能力得分 (logic_score * 2)
      */
-    private Integer logicScore;
+    private Integer reaction;
 
     /**
-     * 格式得分
+     * 表达能力得分 (form_score)
      */
-    private Integer formatScore;
+    private Integer expression;
 
     /**
-     * 语法得分
+     * 人际关系得分 (grammar_score * 2)
      */
-    private Integer grammarScore;
+    private Integer relationship;
+
+    /**
+     * 综合能力得分
+     */
+    private Integer comprehensive;
 
     /**
      * 最终得分
@@ -52,7 +57,7 @@ public class AnswerSubmitVO implements Serializable {
     /**
      * 总体建议
      */
-    private String suggestion;
+    private String overallSuggestion;
 
     private static final long serialVersionUID = 1L;
 } 

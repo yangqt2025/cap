@@ -350,10 +350,6 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     contentScore, logicScore, formScore, grammarScore);
                 
                 // 计算总分：(content_score + logic_score + form_score + grammar_score) / 4 * 10
-                contentScore = contentScore*10;
-                logicScore = logicScore*10;
-                formScore = formScore*10;
-                grammarScore=grammarScore*10;
                 double finalScore = (contentScore + logicScore + formScore + grammarScore) / 4.0 * 10;
                 int roundedFinalScore = (int) Math.round(finalScore);
                 
@@ -400,9 +396,10 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     
                     // 处理优点
                     List<String> strengths = (List<String>) detailedFeedback.get("strengths");
-                    if (strengths != null) {
+                    if (strengths != null && !strengths.isEmpty()) {
+                        String strengthsStr = String.join(";", strengths);
                         feedback.setStrengths(strengths);
-                        log.info("从详细反馈中获取到优点: {}", strengths);
+                        log.info("从详细反馈中获取到优点: {}", strengthsStr);
                     }
                     
                     // 处理改进建议
@@ -426,9 +423,10 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     
                     // 处理具体建议
                     List<String> suggestions = (List<String>) detailedFeedback.get("suggestions");
-                    if (suggestions != null) {
+                    if (suggestions != null && !suggestions.isEmpty()) {
+                        String suggestionsStr = String.join(";", suggestions);
                         feedback.setSpecificSuggestions(suggestions);
-                        log.info("从详细反馈中获取到具体建议: {}", suggestions);
+                        log.info("从详细反馈中获取到具体建议: {}", suggestionsStr);
                     } else if (improvementSuggestions != null) {
                         feedback.setSpecificSuggestions(improvementSuggestions);
                     }
@@ -456,11 +454,13 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                 result.setRecordId(record.getId());
                 result.setUserId(record.getUserId());
                 result.setQuestionId(record.getQuestionId());
-                result.setContentScore(record.getContentScore());
-                result.setLogicScore(record.getLogicScore());
-                result.setFormatScore(record.getFormatScore());
-                result.setGrammarScore(record.getGrammarScore());
+                // 申论评分返回时，每个小分都乘以10
+                result.setContentScore(record.getContentScore() * 10);
+                result.setLogicScore(record.getLogicScore() * 10);
+                result.setFormatScore(record.getFormatScore() * 10);
+                result.setGrammarScore(record.getGrammarScore() * 10);
                 result.setFinalScore(record.getFinalScore());
+                result.setSuggestion(overallSuggestion);
                 
                 log.info("最终返回的简化结果: {}", result);
                 
@@ -506,7 +506,7 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         double totalScore = (contentScore * 0.7 + 
                            formScore * 0.1 + 
                            grammarScore * 0.1 + 
-                           logicScore * 0.1) * 2;
+                           logicScore * 0.1) ;
         record.setSum(totalScore);
         
         // 计算finalScore：(content_score + logic_score + form_score + grammar_score) / 4 * 10
@@ -522,6 +522,7 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         
         // 设置建议和反馈
         String overallSuggestion = response.getOverallSuggestion();
+        
         record.setSuggestion(overallSuggestion != null ? overallSuggestion : "");
         record.setOverallSuggestion(overallSuggestion);
         
@@ -965,9 +966,10 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     
                     // 处理优点
                     List<String> strengths = (List<String>) detailedFeedback.get("strengths");
-                    if (strengths != null) {
+                    if (strengths != null && !strengths.isEmpty()) {
+                        String strengthsStr = String.join(";", strengths);
                         feedback.setStrengths(strengths);
-                        log.info("从详细反馈中获取到优点: {}", strengths);
+                        log.info("从详细反馈中获取到优点: {}", strengthsStr);
                     }
                     
                     // 处理改进建议
@@ -991,9 +993,10 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     
                     // 处理具体建议
                     List<String> suggestions = (List<String>) detailedFeedback.get("suggestions");
-                    if (suggestions != null) {
+                    if (suggestions != null && !suggestions.isEmpty()) {
+                        String suggestionsStr = String.join(";", suggestions);
                         feedback.setSpecificSuggestions(suggestions);
-                        log.info("从详细反馈中获取到具体建议: {}", suggestions);
+                        log.info("从详细反馈中获取到具体建议: {}", suggestionsStr);
                     } else if (improvementSuggestions != null) {
                         feedback.setSpecificSuggestions(improvementSuggestions);
                     }

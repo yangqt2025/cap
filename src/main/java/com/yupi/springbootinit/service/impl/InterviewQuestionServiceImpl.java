@@ -10,6 +10,7 @@ import com.yupi.springbootinit.mapper.UserInterviewRecordMapper;
 import com.yupi.springbootinit.model.dto.interviewquestion.InterviewQuestionQueryRequest;
 import com.yupi.springbootinit.model.entity.InterviewQuestion;
 import com.yupi.springbootinit.model.entity.UserInterviewRecord;
+import com.yupi.springbootinit.model.vo.InterviewSubmitVO;
 import com.yupi.springbootinit.model.vo.UserInterviewRecordVO;
 import com.yupi.springbootinit.service.InterviewQuestionService;
 import org.springframework.stereotype.Service;
@@ -149,11 +150,29 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         record.setQuestionId(questionId);
         record.setUserAnswer(userAnswer);
         
-        // 获取原始分数
-        int contentScore = (Integer) response.get("content_score");
-        int logicScore = (Integer) response.get("logic_score");
-        int formScore = (Integer) response.get("form_score");
-        int grammarScore = (Integer) response.get("grammar_score");
+        // 获取原始分数 - 支持多种响应格式
+        Map<String, Object> evaluation = (Map<String, Object>) response.get("evaluation");
+        Map<String, Object> scoreSource;
+        
+        // 优先使用根级别的分数字段，如果没有则使用evaluation中的
+        if (response.containsKey("content_score")) {
+            scoreSource = response;
+        } else if (evaluation != null) {
+            scoreSource = evaluation;
+        } else {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分服务响应格式错误：缺少分数字段");
+        }
+        
+        int contentScore = (Integer) scoreSource.get("content_score");
+        int logicScore = (Integer) scoreSource.get("logic_score");
+        int formScore = (Integer) scoreSource.get("form_score");
+        int grammarScore = (Integer) scoreSource.get("grammar_score");
+        
+        // 获取新的评分字段（如果存在）
+        Integer referenceAnalysisScore = (Integer) scoreSource.get("reference_analysis_score");
+        if (referenceAnalysisScore == null) {
+            referenceAnalysisScore = 0; // 默认值
+        }
         
         // 设置原始分数
         record.setContentScore(contentScore);
@@ -182,17 +201,124 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         record.setComprehensive(comprehensive);
         record.setFinalScore(finalScore);
 
-        // 设置建议相关字段
-        String suggestion = (String) response.get("suggestion");
-        String[] parts = suggestion.split("建议：");
-        String strengths = parts.length > 0 ? parts[0].trim() : "";
-        String areasForImprovement = parts.length > 1 ? parts[1].trim() : "";
+        // 设置建议相关字段 - 完整展示suggestion
+        String overallComment = null;
         
-        record.setStrengths(strengths);
-        record.setAreasForImprovement(areasForImprovement);
-        record.setSpecificSuggestions(areasForImprovement);
-        record.setOverallSuggestion(suggestion);
+        // 优先从根级别获取suggestion
+        if (response.containsKey("suggestion")) {
+            overallComment = (String) response.get("suggestion");
+        } else if (evaluation != null) {
+            overallComment = (String) evaluation.get("suggestion");
+        }
         
+        if (overallComment == null) {
+            overallComment = "暂无评价";
+        }
+        
+        // 处理详细反馈
+        Map<String, Object> detailedFeedback = (Map<String, Object>) response.get("detailed_feedback");
+        StringBuilder strengths = new StringBuilder();
+        StringBuilder areasForImprovement = new StringBuilder();
+        StringBuilder specificSuggestions = new StringBuilder();
+        
+        // 处理新的suggestions数组
+        List<String> suggestions = (List<String>) response.get("suggestions");
+        if (suggestions != null && !suggestions.isEmpty()) {
+            for (String suggestion : suggestions) {
+                specificSuggestions.append(suggestion).append(";");
+            }
+        }
+        
+        // 处理reference_analysis_detail和analysis
+        String referenceAnalysisDetail = (String) response.get("reference_analysis_detail");
+        String analysis = (String) response.get("analysis");
+        
+        // 如果没有suggestions数组，尝试从冗长的suggestion中提取具体建议
+        if (specificSuggestions.length() == 0 && overallComment != null && overallComment.contains("建议")) {
+            String[] parts = overallComment.split("建议");
+            if (parts.length > 1) {
+                for (int i = 1; i < parts.length; i++) {
+                    String part = parts[i].trim();
+                    if (part.length() > 5) { // 过滤太短的部分
+                        specificSuggestions.append("建议").append(part).append(";");
+                    }
+                }
+            }
+        }
+        
+        if (detailedFeedback != null) {
+            // 处理各个维度的反馈
+            Map<String, Object> content = (Map<String, Object>) detailedFeedback.get("content");
+            Map<String, Object> structure = (Map<String, Object>) detailedFeedback.get("structure");
+            Map<String, Object> language = (Map<String, Object>) detailedFeedback.get("language");
+            Map<String, Object> format = (Map<String, Object>) detailedFeedback.get("format");
+            
+            // 收集优点
+            if (content != null && content.get("comment") != null) {
+                strengths.append("内容方面：").append(content.get("comment")).append(";");
+            }
+            if (structure != null && structure.get("comment") != null) {
+                strengths.append("结构方面：").append(structure.get("comment")).append(";");
+            }
+            if (language != null && language.get("comment") != null) {
+                strengths.append("语言方面：").append(language.get("comment")).append(";");
+            }
+            if (format != null && format.get("comment") != null) {
+                strengths.append("格式方面：").append(format.get("comment")).append(";");
+            }
+            
+            // 收集改进建议
+            List<String> improvementSuggestions = (List<String>) response.get("improvement_suggestions");
+            if (improvementSuggestions != null && !improvementSuggestions.isEmpty()) {
+                for (String suggestion : improvementSuggestions) {
+                    areasForImprovement.append(suggestion).append(";");
+                }
+            }
+            
+            // 收集具体建议（如果suggestions数组为空，则从language.suggestions获取）
+            if (specificSuggestions.length() == 0 && language != null && language.get("suggestions") != null) {
+                List<String> languageSuggestions = (List<String>) language.get("suggestions");
+                if (languageSuggestions != null) {
+                    for (String suggestion : languageSuggestions) {
+                        specificSuggestions.append(suggestion).append(";");
+                    }
+                }
+            }
+        }
+        
+        // 如果没有从detailed_feedback获取到建议，使用新的suggestions数组
+        if (areasForImprovement.length() == 0 && suggestions != null && !suggestions.isEmpty()) {
+            for (String suggestion : suggestions) {
+                areasForImprovement.append(suggestion).append(";");
+            }
+        }
+        
+        record.setStrengths(strengths.toString());
+        record.setAreasForImprovement(areasForImprovement.toString());
+        record.setSpecificSuggestions(specificSuggestions.toString());
+        record.setOverallSuggestion(overallComment);
+        
+        // 保存额外的分析信息到feedback字段（如果有的话）
+        if (referenceAnalysisDetail != null || analysis != null) {
+            Map<String, Object> feedbackMap = new HashMap<>();
+            if (referenceAnalysisDetail != null) {
+                feedbackMap.put("reference_analysis_detail", referenceAnalysisDetail);
+            }
+            if (analysis != null) {
+                feedbackMap.put("analysis", analysis);
+            }
+            if (referenceAnalysisScore != null) {
+                feedbackMap.put("reference_analysis_score", referenceAnalysisScore);
+            }
+            
+            try {
+                String feedbackJson = objectMapper.writeValueAsString(feedbackMap);
+                record.setFeedback(feedbackJson);
+            } catch (JsonProcessingException e) {
+                log.warn("保存反馈信息失败", e);
+            }
+        }
+
         // 保存记录
         boolean saved = userInterviewRecordMapper.insert(record) > 0;
         if (!saved) {
@@ -266,10 +392,10 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         vo.setCreateTime(record.getCreateTime());
         
         // 设置面试评分相关字段
-        vo.setPlan(record.getContentScore() * 2);  // plan是contentScore的两倍
-        vo.setReaction(record.getLogicScore() * 2);  // reaction是logicScore的两倍
-        vo.setExpression(record.getFormScore());  // expression等于formScore
-        vo.setRelationship(record.getGrammarScore() * 2);  // relationship是grammarScore的两倍
+        vo.setPlan(record.getPlan());
+        vo.setReaction(record.getReaction());
+        vo.setExpression(record.getExpression());
+        vo.setRelationship(record.getRelationship());
         
         // 计算comprehensive分数：(plan + reaction + expression + relationship) * 3 / 7
         int comprehensive = (int)((vo.getPlan() + vo.getReaction() + vo.getExpression() + vo.getRelationship()) * 3.0 / 7);
@@ -454,6 +580,27 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         
         log.info("成功获取用户 {} 的面试题答题记录", userId);
         return result;
+    }
+
+    @Override
+    public InterviewSubmitVO submitAnswerWithVO(Long questionId, String userAnswer, HttpServletRequest request) {
+        // 调用原有的submitAnswer方法获取完整记录
+        UserInterviewRecord record = submitAnswer(questionId, userAnswer, request);
+        
+        // 构建简化格式的响应
+        InterviewSubmitVO vo = new InterviewSubmitVO();
+        vo.setRecordId(record.getId());
+        vo.setUserId(record.getUserId());
+        vo.setQuestionId(record.getQuestionId());
+        vo.setPlan(record.getPlan());
+        vo.setReaction(record.getReaction());
+        vo.setExpression(record.getExpression());
+        vo.setRelationship(record.getRelationship());
+        vo.setComprehensive(record.getComprehensive());
+        vo.setFinalScore(record.getFinalScore());
+        vo.setOverallSuggestion(record.getOverallSuggestion());
+        
+        return vo;
     }
 }
 

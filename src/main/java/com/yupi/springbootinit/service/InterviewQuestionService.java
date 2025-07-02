@@ -6,6 +6,7 @@ import com.yupi.springbootinit.model.dto.interviewquestion.InterviewQuestionQuer
 import com.yupi.springbootinit.model.entity.InterviewQuestion;
 import com.yupi.springbootinit.model.entity.UserInterviewRecord;
 import com.yupi.springbootinit.model.vo.UserInterviewRecordVO;
+import com.yupi.springbootinit.model.vo.InterviewSubmitVO;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -33,6 +34,15 @@ public interface InterviewQuestionService extends IService<InterviewQuestion> {
      * @return 评分结果
      */
     UserInterviewRecord submitAnswer(Long questionId, String userAnswer, HttpServletRequest request);
+
+    /**
+     * 提交面试题答案（简化格式）
+     * @param questionId 题目ID
+     * @param userAnswer 用户答案
+     * @param request HTTP请求
+     * @return 简化格式的评分结果
+     */
+    InterviewSubmitVO submitAnswerWithVO(Long questionId, String userAnswer, HttpServletRequest request);
 
     /**
      * 添加面试题
