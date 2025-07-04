@@ -592,13 +592,14 @@ public class InterviewQuestionServiceImpl extends ServiceImpl<InterviewQuestionM
         vo.setRecordId(record.getId());
         vo.setUserId(record.getUserId());
         vo.setQuestionId(record.getQuestionId());
+        vo.setAnswerId(record.getId());  // 使用记录ID作为答案ID
         vo.setPlan(record.getPlan());
         vo.setReaction(record.getReaction());
         vo.setExpression(record.getExpression());
         vo.setRelationship(record.getRelationship());
         vo.setComprehensive(record.getComprehensive());
         vo.setFinalScore(record.getFinalScore());
-        vo.setOverallSuggestion(record.getOverallSuggestion());
+        vo.setSuggestion(record.getOverallSuggestion());
         
         return vo;
     }

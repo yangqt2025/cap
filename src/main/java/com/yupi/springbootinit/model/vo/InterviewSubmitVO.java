@@ -25,6 +25,11 @@ public class InterviewSubmitVO implements Serializable {
     private Long questionId;
 
     /**
+     * 答案ID
+     */
+    private Long answerId;
+
+    /**
      * 计划能力得分 (content_score * 2)
      */
     private Integer plan;
@@ -57,7 +62,7 @@ public class InterviewSubmitVO implements Serializable {
     /**
      * 总体建议
      */
-    private String overallSuggestion;
+    private String suggestion;
 
     private static final long serialVersionUID = 1L;
 } 

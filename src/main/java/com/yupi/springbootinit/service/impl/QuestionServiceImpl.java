@@ -656,11 +656,17 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                             log.warn("未找到题目信息，questionId: {}", record.getQuestionId());
                         }
                         
-                        // 重新计算总分
-                        double totalScore = (record.getContentScore() * 0.7 + 
-                                          record.getFormatScore() * 0.1 + 
-                                          record.getGrammarScore() * 0.1 + 
-                                          record.getLogicScore() * 0.1) * 2;
+                        // 申论题分数乘以10，与submitAnswer方法保持一致
+                        vo.setContentScore(record.getContentScore() * 10);
+                        vo.setLogicScore(record.getLogicScore() * 10);
+                        vo.setFormatScore(record.getFormatScore() * 10);
+                        vo.setGrammarScore(record.getGrammarScore() * 10);
+                        
+                        // 重新计算总分 - 使用乘以10后的分数，权重计算
+                        double totalScore = (record.getContentScore() * 10 * 0.7 + 
+                                          record.getFormatScore() * 10 * 0.1 + 
+                                          record.getGrammarScore() * 10 * 0.1 + 
+                                          record.getLogicScore() * 10 * 0.1);
                         vo.setTotalScore(BigDecimal.valueOf(totalScore));
                         
                         // 设置评价相关字段
